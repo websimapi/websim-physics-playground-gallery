@@ -457,6 +457,7 @@ function PhysicsContainer({ artifact }) {
     let shadow = null;
     let cleanup = () => {};
     let sceneCleanup = null;
+    let resizeObserver = null;
 
     const initializePhysics = () => {
       try {
@@ -467,6 +468,7 @@ function PhysicsContainer({ artifact }) {
           throw new Error('Could not find physics content container');
         }
 
+        // Clear existing shadow root content if it exists
         if (sandbox.shadowRoot) {
           sandbox.shadowRoot.innerHTML = '';
         } else {
@@ -537,21 +539,15 @@ function PhysicsContainer({ artifact }) {
             const scene = new THREE.Scene();
             scene.background = new THREE.Color(0xf8f9fa);
             
-            // Create camera with better default position for preview
             const aspectRatio = wrapper.clientWidth / wrapper.clientHeight;
-            const camera = new THREE.PerspectiveCamera(
-              60, // Wider FOV for better preview
-              aspectRatio,
-              0.1,
-              1000
-            );
-            camera.position.set(4, 4, 4); // Position camera at angle for better preview
+            const camera = new THREE.PerspectiveCamera(60, aspectRatio, 0.1, 1000);
+            camera.position.set(4, 4, 4);
             camera.lookAt(0, 0, 0);
             
             const renderer = new THREE.WebGLRenderer({ 
               antialias: true,
               alpha: true,
-              preserveDrawingBuffer: true // Enables taking snapshots
+              preserveDrawingBuffer: true
             });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
@@ -589,29 +585,49 @@ function PhysicsContainer({ artifact }) {
             scene.add(gridHelper);
             
             // Handle resize
+            let resizeTimeout = null;
             const handleResize = () => {
-              const width = wrapper.clientWidth;
-              const height = wrapper.clientHeight;
-              const aspect = width / height;
-              
-              camera.aspect = aspect;
-              camera.updateProjectionMatrix();
-              renderer.setSize(width, height, false);
+              if (resizeTimeout) {
+                clearTimeout(resizeTimeout);
+              }
+              resizeTimeout = setTimeout(() => {
+                if (!mounted) return;
+                const width = wrapper.clientWidth;
+                const height = wrapper.clientHeight;
+                camera.aspect = width / height;
+                camera.updateProjectionMatrix();
+                renderer.setSize(width, height, false);
+              }, 100);
             };
             
-            window.addEventListener('resize', handleResize);
+            // Create ResizeObserver with debounced callback
+            resizeObserver = new ResizeObserver((entries) => {
+              if (!mounted) return;
+              handleResize();
+            });
             
-            // Animation loop with controls update
+            resizeObserver.observe(wrapper);
+            
+            let animationFrameId = null;
+            
             function animate() {
               if (!mounted) return;
-              requestAnimationFrame(animate);
+              animationFrameId = requestAnimationFrame(animate);
               controls.update();
               renderer.render(scene, camera);
             }
             animate();
             
             sceneCleanup = () => {
-              window.removeEventListener('resize', handleResize);
+              if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+              }
+              if (resizeTimeout) {
+                clearTimeout(resizeTimeout);
+              }
+              if (resizeObserver) {
+                resizeObserver.disconnect();
+              }
               controls.dispose();
               renderer.dispose();
               if (renderer.domElement && renderer.domElement.parentNode) {
@@ -683,12 +699,15 @@ function PhysicsContainer({ artifact }) {
           timers.forEach(id => window.clearTimeout(id));
           intervals.forEach(id => window.clearInterval(id));
           if (sceneCleanup) sceneCleanup();
-          animations.clear();
-          timers.clear();
-          intervals.clear();
+          if (resizeObserver) {
+            resizeObserver.disconnect();
+          }
           if (shadow) {
             shadow.innerHTML = '';
           }
+          animations.clear();
+          timers.clear();
+          intervals.clear();
         };
 
         const code = `
@@ -712,8 +731,12 @@ function PhysicsContainer({ artifact }) {
     const initTimer = setTimeout(initializePhysics, 100);
 
     return () => {
+      mounted = false;
       cleanup();
       clearTimeout(initTimer);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
     };
   }, [artifact.id, artifact.code]);
 
