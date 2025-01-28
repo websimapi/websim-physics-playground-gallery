@@ -461,7 +461,7 @@ function PhysicsContainer({ artifact }) {
             try {
               cb();
             } catch (e) {
-              console.error(`[Physics ${artifact.id")] Interval error:`, e);
+              console.error(`[Physics ${artifact.id}] Interval error:`, e);
             }
           }, delay);
           intervals.add(id);
