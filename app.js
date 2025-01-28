@@ -123,10 +123,11 @@ function PhysicsContainer({ artifact }) {
   useEffect(() => {
     let cleanup = () => {};
     let shadow = null;
+    let mounted = true;
     
     const initializePhysics = () => {
       try {
-        if (!containerRef.current) return;
+        if (!containerRef.current || !mounted) return;
 
         const container = containerRef.current;
         const sandbox = container.querySelector('.physics-content');
@@ -144,10 +145,10 @@ function PhysicsContainer({ artifact }) {
         // Create new shadow root
         shadow = sandbox.attachShadow({ mode: 'open' });
         
-        // Create and setup the physics container
+        // Create container div first
         const physicsContainer = document.createElement('div');
         physicsContainer.id = sandboxId;
-        physicsContainer.innerHTML = artifact.code.html || '';
+        shadow.appendChild(physicsContainer);
         
         // Add styles
         const style = document.createElement('style');
@@ -160,40 +161,41 @@ function PhysicsContainer({ artifact }) {
             height: 100%;
             contain: content;
           }
-          div {
-            position: relative;
-            max-width: 100%;
-          }
           ${artifact.code.css || ''}
         `;
-        
         shadow.appendChild(style);
-        shadow.appendChild(physicsContainer);
+        
+        // Add HTML content
+        physicsContainer.innerHTML = artifact.code.html || '';
         
         // Create isolated script context
         const scriptContent = `
           (() => {
             try {
-              // Get container reference safely
-              const container = document.getElementById('${sandboxId}');
-              if (!container) throw new Error('Container not found');
+              const rootElement = document.getElementById('${sandboxId}');
+              if (!rootElement) throw new Error('Container not found');
               
               // Track animation frames and timeouts
               const activeAnimationFrames = new Set();
               const activeTimeouts = new Set();
+              const activeIntervals = new Set();
               
               // Create sandbox environment
               const sandbox = {
+                rootElement,
+                document: {
+                  getElementById: (id) => rootElement.querySelector('#' + id),
+                  querySelector: (sel) => rootElement.querySelector(sel),
+                  querySelectorAll: (sel) => rootElement.querySelectorAll(sel)
+                },
                 console: {
                   log: (...args) => console.log('[Physics ${artifact.id}]:', ...args),
                   error: (...args) => console.error('[Physics ${artifact.id}]:', ...args),
                   warn: (...args) => console.warn('[Physics ${artifact.id}]:', ...args)
                 },
-                container,
-                getElement: (selector) => container.querySelector(selector),
-                getElements: (selector) => container.querySelectorAll(selector),
                 requestAnimationFrame: (cb) => {
                   const id = window.requestAnimationFrame((timestamp) => {
+                    if (!activeAnimationFrames.has(id)) return;
                     activeAnimationFrames.delete(id);
                     try {
                       cb(timestamp);
@@ -210,6 +212,7 @@ function PhysicsContainer({ artifact }) {
                 },
                 setTimeout: (cb, delay) => {
                   const id = window.setTimeout(() => {
+                    if (!activeTimeouts.has(id)) return;
                     activeTimeouts.delete(id);
                     try {
                       cb();
@@ -224,15 +227,33 @@ function PhysicsContainer({ artifact }) {
                   activeTimeouts.delete(id);
                   window.clearTimeout(id);
                 },
+                setInterval: (cb, delay) => {
+                  const id = window.setInterval(() => {
+                    if (!activeIntervals.has(id)) return;
+                    try {
+                      cb();
+                    } catch (e) {
+                      console.error('[Physics ${artifact.id}] Interval error:', e);
+                    }
+                  }, delay);
+                  activeIntervals.add(id);
+                  return id;
+                },
+                clearInterval: (id) => {
+                  activeIntervals.delete(id);
+                  window.clearInterval(id);
+                },
                 Math: Object.create(Math)
               };
 
               // Store cleanup function
-              container.cleanup = () => {
+              rootElement.cleanup = () => {
                 activeAnimationFrames.forEach(id => window.cancelAnimationFrame(id));
                 activeTimeouts.forEach(id => window.clearTimeout(id));
+                activeIntervals.forEach(id => window.clearInterval(id));
                 activeAnimationFrames.clear();
                 activeTimeouts.clear();
+                activeIntervals.clear();
               };
 
               // Run physics code in sandbox
@@ -253,11 +274,10 @@ function PhysicsContainer({ artifact }) {
           try {
             if (shadow) {
               const container = shadow.getElementById(sandboxId);
-              if (container && container.cleanup) {
+              if (container && typeof container.cleanup === 'function') {
                 container.cleanup();
               }
               
-              // Remove all children from shadow root
               while (shadow.firstChild) {
                 shadow.removeChild(shadow.firstChild);
               }
@@ -273,9 +293,10 @@ function PhysicsContainer({ artifact }) {
     };
 
     // Initialize physics with a small delay to ensure DOM is ready
-    const initTimer = setTimeout(initializePhysics, 0);
+    const initTimer = setTimeout(initializePhysics, 100);
 
     return () => {
+      mounted = false;
       clearTimeout(initTimer);
       cleanup();
     };
