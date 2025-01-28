@@ -1,0 +1,132 @@
+const { useState, useEffect, useSyncExternalStore } = React;
+
+function PhysicsPlayground() {
+  const [prompt, setPrompt] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  const room = new WebsimSocket();
+  
+  // Get physics artifacts from the database
+  const artifacts = useSyncExternalStore(
+    room.collection('physics_artifact').subscribe,
+    () => room.collection('physics_artifact').getList()
+  );
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!prompt.trim()) return;
+    
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      // Get AI response for physics simulation
+      const response = await fetch('/api/ai_completion', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
+          Respond with HTML, CSS, and JavaScript code that demonstrates the physics concept.
+          The code should be self-contained and use SVG for graphics where possible.
+          
+          Prompt: ${prompt}`,
+          data: prompt
+        }),
+      });
+
+      const artifactCode = await response.json();
+      
+      // Store the artifact in the database
+      await room.collection('physics_artifact').create({
+        prompt,
+        code: artifactCode,
+        title: artifactCode.title,
+        description: artifactCode.description
+      });
+
+      setPrompt('');
+    } catch (err) {
+      setError('Failed to create physics simulation. Please try again.');
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="container">
+      <div className="input-section">
+        <form onSubmit={handleSubmit}>
+          <div className="input-group">
+            <input
+              type="text"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Describe a physics concept or experiment..."
+              disabled={isSubmitting}
+            />
+            <button type="submit" disabled={isSubmitting || !prompt.trim()}>
+              {isSubmitting ? 'Creating...' : 'Create'}
+            </button>
+          </div>
+        </form>
+        {error && <div className="error">{error}</div>}
+      </div>
+
+      <div className="gallery">
+        {artifacts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(artifact => (
+          <PhysicsContainer key={artifact.id} artifact={artifact} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PhysicsContainer({ artifact }) {
+  const containerRef = React.useRef();
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const container = containerRef.current;
+    const sandbox = container.querySelector('.physics-content');
+    
+    // Create a safe sandbox for the physics simulation
+    sandbox.innerHTML = artifact.code.html;
+    
+    // Add styles
+    const style = document.createElement('style');
+    style.textContent = artifact.code.css;
+    sandbox.appendChild(style);
+    
+    // Add and execute JavaScript
+    const script = document.createElement('script');
+    script.textContent = artifact.code.js;
+    sandbox.appendChild(script);
+
+    return () => {
+      sandbox.innerHTML = '';
+    };
+  }, [artifact]);
+
+  return (
+    <div className="physics-container" ref={containerRef}>
+      <div className="physics-content"></div>
+      <div className="physics-meta">
+        <img 
+          className="avatar"
+          src={`https://images.websim.ai/avatar/${artifact.username}`}
+          alt={artifact.username}
+        />
+        <span>{artifact.username}</span>
+        <span>•</span>
+        <span>{new Date(artifact.created_at).toLocaleDateString()}</span>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<PhysicsPlayground />, document.getElementById('root'));
