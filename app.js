@@ -146,17 +146,21 @@ function PhysicsContainer({ artifact }) {
       sandbox.appendChild(content);
       
       // Create and execute the physics code in a safe way
-      const setupScript = document.createElement('script');
-      setupScript.textContent = `
-        (function() {
+      const functionBody = `
+        return function(container) {
           ${artifact.code.js}
-          // Call the setup function with the content div as the container
-          setup(document.currentScript.parentElement);
-        })();
+          if (typeof setup === 'function') {
+            setup(container);
+          }
+        }
       `;
       
-      // Append the script last
-      sandbox.appendChild(setupScript);
+      // Create the function in an isolated scope
+      const createPhysics = new Function(functionBody);
+      const initPhysics = createPhysics();
+      
+      // Execute the physics code with the sandbox as the container
+      initPhysics(sandbox);
       
     } catch (error) {
       console.error('Error setting up physics container:', error);
