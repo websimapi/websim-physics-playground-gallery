@@ -30,7 +30,7 @@ function PhysicsPlayground() {
         body: JSON.stringify({
           prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
           The response should be valid JSON containing HTML, CSS, and JavaScript code that demonstrates the physics concept.
-          The JavaScript code should contain a setup function and any other necessary functions.
+          The JavaScript code should be written to work within a setup function.
           
           interface Response {
             html: string;
@@ -42,15 +42,17 @@ function PhysicsPlayground() {
           
           Example response:
           {
-            "html": "<div class='simulation'><svg viewBox='0 0 400 300'></svg></div>",
-            "css": ".simulation { width: 100%; height: 100%; }",
-            "js": "function setup(container) { const svg = container.querySelector('svg'); /* physics code here */ }",
-            "title": "Simple Pendulum",
-            "description": "Demonstrates harmonic motion of a pendulum"
+            "html": "<div class='simulation'><svg viewBox='0 0 400 300'><circle cx='200' cy='150' r='20' class='ball'></circle></svg></div>",
+            "css": ".simulation { width: 100%; height: 100%; } .ball { fill: blue; }",
+            "js": "let ball = container.querySelector('.ball'); let velocity = 0; function animate() { velocity += 0.5; let cy = parseFloat(ball.getAttribute('cy')); ball.setAttribute('cy', cy + velocity); if (cy > 280) { velocity = -velocity * 0.8; } requestAnimationFrame(animate); } animate();",
+            "title": "Bouncing Ball",
+            "description": "Simple gravity simulation with a bouncing ball"
           }
+
           Make the response a valid JSON object matching the interface above.
           The code should be self-contained and use SVG for graphics where possible.
-          All JavaScript code should be within the setup function that takes a container parameter.
+          All JavaScript code should be executable when passed into the setup function scope.
+          Avoid using 'let' or 'const' declarations at the top level - all variables should be declared inside functions.
           
           Prompt: ${prompt}`,
           data: prompt
@@ -141,26 +143,13 @@ function PhysicsContainer({ artifact }) {
       const content = document.createElement('div');
       content.innerHTML = artifact.code.html;
       
-      // Append style and content first
+      // Append style and content
       sandbox.appendChild(style);
       sandbox.appendChild(content);
       
-      // Create and execute the physics code in a safe way
-      const functionBody = `
-        return function(container) {
-          ${artifact.code.js}
-          if (typeof setup === 'function') {
-            setup(container);
-          }
-        }
-      `;
-      
-      // Create the function in an isolated scope
-      const createPhysics = new Function(functionBody);
-      const initPhysics = createPhysics();
-      
-      // Execute the physics code with the sandbox as the container
-      initPhysics(sandbox);
+      // Create and execute the physics code
+      const setupFunction = new Function('container', artifact.code.js);
+      setupFunction(sandbox);
       
     } catch (error) {
       console.error('Error setting up physics container:', error);
