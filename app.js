@@ -978,4 +978,5 @@ function PhysicsPlayground() {
   );
 }
 
-ReactDOM.render(<PhysicsPlayground />, document.getElementById('root'));
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<PhysicsPlayground />);
