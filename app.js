@@ -632,7 +632,6 @@ function PhysicsPlayground() {
 
   const handlePageChange = (pageNumber) => {
     setCurrentPage(pageNumber);
-    // Scroll to top of gallery when page changes
     window.scrollTo({
       top: 0,
       behavior: 'smooth'
@@ -645,12 +644,10 @@ function PhysicsPlayground() {
     let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
     let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
 
-    // Adjust start page if we're near the end
     if (endPage - startPage + 1 < maxVisiblePages) {
       startPage = Math.max(1, endPage - maxVisiblePages + 1);
     }
 
-    // Add first page button if not visible
     if (startPage > 1) {
       pages.push(
         <button 
@@ -664,7 +661,6 @@ function PhysicsPlayground() {
       if (startPage > 2) pages.push(<span key="ellipsis1">...</span>);
     }
 
-    // Add page numbers
     for (let i = startPage; i <= endPage; i++) {
       pages.push(
         <button
@@ -677,7 +673,6 @@ function PhysicsPlayground() {
       );
     }
 
-    // Add last page button if not visible
     if (endPage < totalPages) {
       if (endPage < totalPages - 1) pages.push(<span key="ellipsis2">...</span>);
       pages.push(
@@ -763,7 +758,7 @@ Example with Three.js and CANNON.js:
     const sphereBody = new CANNON.Body({\\n\\
       mass: 5,\\n\\
       shape: new CANNON.Sphere(radius)\\n\\
-    });\\!n\\
+    });\\n\\
     sphereBody.position.set(0, 10, 0);\\n\\
     world.addBody(sphereBody);\\n\\
     \\n\\
