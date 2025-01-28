@@ -10,6 +10,7 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
     let mounted = true;
     let shadow = null;
     let cleanup = () => {};
+    let sceneCleanup = null;
 
     const initializePhysics = () => {
       try {
@@ -27,20 +28,37 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
         }
 
         const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'width: 100%; height: 100%; position: relative;';
+        wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
         shadow.appendChild(wrapper);
 
         const styleElement = document.createElement('style');
         styleElement.textContent = `
           :host {
             all: initial;
-            display: block;
+            display: flex;
             position: relative;
             width: 100%;
             height: 100%;
+            align-items: center;
+            justify-content: center;
             contain: content;
           }
           ${artifact.code.css || ''}
+          
+          /* Ensure Three.js canvas fills container */
+          canvas {
+            width: 100% !important;
+            height: 100% !important;
+          }
+          
+          /* For 2D content */
+          div {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
         `;
         shadow.appendChild(styleElement);
 
@@ -80,34 +98,33 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
             
             const controls = new THREE.OrbitControls(camera, renderer.domElement);
             
-            // Add ambient light
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-            scene.add(ambientLight);
-            
-            // Add directional light
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-            directionalLight.position.set(5, 5, 5);
-            scene.add(directionalLight);
-            
-            // Handle resize
+            // Handle fullscreen resize
             const handleResize = () => {
-              camera.aspect = wrapper.clientWidth / wrapper.clientHeight;
+              const width = wrapper.clientWidth;
+              const height = wrapper.clientHeight;
+              camera.aspect = width / height;
               camera.updateProjectionMatrix();
-              renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
+              renderer.setSize(width, height, false);
             };
             
             window.addEventListener('resize', handleResize);
+            
+            // Store cleanup for Three.js scene
+            sceneCleanup = () => {
+              window.removeEventListener('resize', handleResize);
+              controls.dispose();
+              renderer.dispose();
+              if (renderer.domElement && renderer.domElement.parentNode) {
+                renderer.domElement.parentNode.removeChild(renderer.domElement);
+              }
+            };
             
             return {
               scene,
               camera,
               renderer,
               controls,
-              dispose: () => {
-                window.removeEventListener('resize', handleResize);
-                renderer.dispose();
-                wrapper.removeChild(renderer.domElement);
-              }
+              dispose: sceneCleanup
             };
           },
           loaders: {
@@ -165,6 +182,7 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
           animations.forEach(id => window.cancelAnimationFrame(id));
           timers.forEach(id => window.clearTimeout(id));
           intervals.forEach(id => window.clearInterval(id));
+          if (sceneCleanup) sceneCleanup();
           animations.clear();
           timers.clear();
           intervals.clear();
@@ -193,9 +211,22 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
 
     const initTimer = setTimeout(initializePhysics, 100);
 
+    // Add resize observer to handle container size changes
+    const resizeObserver = new ResizeObserver(() => {
+      if (mounted) {
+        cleanup();
+        initializePhysics();
+      }
+    });
+    
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current.querySelector('.physics-content'));
+    }
+
     return () => {
       cleanup();
       clearTimeout(initTimer);
+      resizeObserver.disconnect();
     };
   }, [isOpen, artifact]);
 
