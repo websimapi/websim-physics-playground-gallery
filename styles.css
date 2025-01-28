@@ -55,6 +55,7 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 20px;
+  align-items: start;
 }
 
 .physics-container {
@@ -63,6 +64,9 @@ button:disabled {
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   overflow: visible;
+  height: fit-content;
+  display: flex;
+  flex-direction: column;
 }
 
 .physics-content {
@@ -70,7 +74,7 @@ button:disabled {
   isolation: isolate;
   padding: 20px;
   border-bottom: 1px solid #eee;
-  min-height: 200px;
+  height: 300px;
   contain: content;
   box-sizing: border-box;
   overflow: hidden;
@@ -104,6 +108,7 @@ button:disabled {
   align-items: center;
   gap: 10px;
   border-bottom: 1px solid #eee;
+  flex-wrap: wrap;
 }
 
 .avatar {
@@ -172,64 +177,94 @@ button:disabled {
   padding: 15px 20px;
   font-size: 14px;
   color: #666;
-  transition: max-height 0.3s ease-out;
+  transition: max-height 0.3s ease-out, padding 0.3s ease-out;
   overflow: hidden;
+  height: auto;
+  max-height: 0;
 }
 
 .details-dropdown.closed {
-  max-height: 0;
   padding: 0 20px;
-  overflow: hidden;
+  max-height: 0;
 }
 
 .details-dropdown.open {
-  max-height: 500px;
+  max-height: 800px;
   border-top: 1px solid #eee;
+  padding: 15px 20px;
 }
 
 .details-toggle {
   background: none;
   border: none;
   color: #1a73e8;
-  padding: 0;
+  padding: 4px 8px;
   cursor: pointer;
   margin-left: auto;
-  font-size: 14px;
+  font-size: 13px;
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-.details-toggle:hover {
-  background: none;
-  color: #1557b0;
-  text-decoration: underline;
+  white-space: nowrap;
 }
 
 .details-section {
-  margin-bottom: 10px;
+  margin-bottom: 15px;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  hyphens: auto;
 }
 
-详情-section:last-child {
+.details-section:last-child {
   margin-bottom: 0;
 }
 
 .details-label {
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   color: #444;
+  font-size: 13px;
 }
 
 .details-value {
   color: #666;
-  word-break: break-word;
+  line-height: 1.4;
+  font-size: 13px;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  hyphens: auto;
 }
 
 .chevron {
   transition: transform 0.3s ease;
   display: inline-block;
+  font-size: 10px;
+  margin-top: 2px;
 }
 
 .chevron.open {
   transform: rotate(180deg);
+}
+
+@media (max-width: 768px) {
+  .gallery {
+    grid-template-columns: 1fr;
+  }
+  
+  .physics-container {
+    width: 100%;
+  }
+  
+  .physics-meta {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .details-toggle {
+    margin-left: 0;
+    width: 100%;
+    justify-content: center;
+    margin-top: 5px;
+  }
 }
