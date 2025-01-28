@@ -1,10 +1,14 @@
 const { useState, useEffect, useSyncExternalStore } = React;
 
-function FullscreenModal({ isOpen, onClose, artifact, onUpdateZoom }) {
+function FullscreenModal({ isOpen, onClose, artifact, onUpdateZoom, currentZoom }) {
   const containerRef = React.useRef();
   const [mountError, setMountError] = useState(null);
-  const [zoom, setZoom] = useState(artifact.code.zoom || 1);
+  const [zoom, setZoom] = useState(currentZoom);
   const [is3D, setIs3D] = useState(false);
+
+  useEffect(() => {
+    setZoom(currentZoom);
+  }, [currentZoom]);
 
   useEffect(() => {
     const is3DScene = artifact.code.js.includes('initThreeScene');
@@ -13,9 +17,7 @@ function FullscreenModal({ isOpen, onClose, artifact, onUpdateZoom }) {
 
   const handleZoomChange = (newZoom) => {
     setZoom(newZoom);
-    if (onUpdateZoom) {
-      onUpdateZoom(newZoom);
-    }
+    onUpdateZoom(newZoom);
   };
 
   useEffect(() => {
@@ -284,7 +286,7 @@ function FullscreenModal({ isOpen, onClose, artifact, onUpdateZoom }) {
               </div>
             )}
           </div>
-�          <button className="fullscreen-close" onClick={onClose}>&times;</button>
+          <button className="fullscreen-close" onClick={onClose}>&times;</button>
         </div>
         <div className="fullscreen-body">
           <div className="physics-content">
@@ -417,16 +419,37 @@ function PhysicsContainer({ artifact }) {
   const [iterationCount, setIterationCount] = useState(0);
   const [zoom, setZoom] = useState(artifact.code.zoom || 1);
 
+  useEffect(() => {
+    if (!artifact.code.js.includes('initThreeScene')) {
+      const content = containerRef.current?.querySelector('.physics-content');
+      if (content && content.shadowRoot) {
+        const wrapper = content.shadowRoot.querySelector('div');
+        if (wrapper) {
+          wrapper.style.transform = `scale(${zoom})`;
+          wrapper.style.transformOrigin = 'center center';
+          wrapper.style.width = '100%';
+          wrapper.style.height = '100%';
+          wrapper.style.display = 'flex';
+          wrapper.style.alignItems = 'center';
+          wrapper.style.justifyContent = 'center';
+        }
+      }
+    }
+  }, [zoom, artifact.code.js]);
+
   const handleUpdateZoom = async (newZoom) => {
     try {
-      // Update the artifact in the database with the new zoom level
-      await room.collection('physics_artifact').update(artifact.id, {
-        code: {
-          ...artifact.code,
-          zoom: newZoom
-        }
-      });
       setZoom(newZoom);
+      // Only update in database after a small delay to prevent too frequent updates
+      const timeoutId = setTimeout(async () => {
+        await room.collection('physics_artifact').update(artifact.id, {
+          code: {
+            ...artifact.code,
+            zoom: newZoom
+          }
+        });
+      }, 500);
+      return () => clearTimeout(timeoutId);
     } catch (error) {
       console.error('Failed to update zoom level:', error);
     }
@@ -804,7 +827,7 @@ function PhysicsContainer({ artifact }) {
         <div className="iteration-badge" title={`Iteration #${iterationCount}`}>
           {iterationCount}
         </div>
-        <div className="physics-content" style={!artifact.code.js.includes('initThreeScene') ? { transform: `scale(${zoom})`, transformOrigin: 'center center' } : undefined}>
+        <div className="physics-content">
           {mountError && (
             <div className="error">
               Failed to load physics simulation: {mountError}
@@ -864,6 +887,7 @@ function PhysicsContainer({ artifact }) {
         onClose={() => setIsFullscreen(false)}
         artifact={artifact}
         onUpdateZoom={handleUpdateZoom}
+        currentZoom={zoom}
       />
       <IterateModal
         isOpen={isIterateModalOpen}
@@ -1004,4 +1028,8 @@ function PhysicsPlayground() {
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<PhysicsPlayground />);
+root.render(
+  <React.StrictMode>
+    <PhysicsPlayground />  
+  </React.StrictMode>
+);
