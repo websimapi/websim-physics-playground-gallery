@@ -11,6 +11,7 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
     let shadow = null;
     let cleanup = () => {};
     let sceneCleanup = null;
+    let resizeObserver = null;
 
     const initializePhysics = () => {
       try {
@@ -85,28 +86,47 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
           THREE: window.THREE,
           initThreeScene: () => {
             const scene = new THREE.Scene();
-            const camera = new THREE.PerspectiveCamera(
-              75,
-              wrapper.clientWidth / wrapper.clientHeight,
-              0.1,
-              1000
-            );
+            scene.background = new THREE.Color(0xf8f9fa);
             
-            const renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
-            wrapper.appendChild(renderer.domElement);
+            const container = wrapper;
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            const aspectRatio = width / height;
+            
+            const camera = new THREE.PerspectiveCamera(60, aspectRatio, 0.1, 1000);
+            camera.position.set(4, 4, 4);
+            camera.lookAt(0, 0, 0);
+            
+            const renderer = new THREE.WebGLRenderer({ 
+              antialias: true,
+              alpha: true,
+            });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(width, height, false);
+            container.appendChild(renderer.domElement);
             
             const controls = new THREE.OrbitControls(camera, renderer.domElement);
             
-            // Handle fullscreen resize
             const handleResize = () => {
-              const width = wrapper.clientWidth;
-              const height = wrapper.clientHeight;
-              camera.aspect = width / height;
+              if (!mounted) return;
+              
+              const newWidth = container.clientWidth;
+              const newHeight = container.clientHeight;
+              
+              camera.aspect = newWidth / newHeight;
               camera.updateProjectionMatrix();
-              renderer.setSize(width, height, false);
+              
+              renderer.setSize(newWidth, newHeight, false);
             };
+
+            if (resizeObserver) resizeObserver.disconnect();
+            resizeObserver = new ResizeObserver((entries) => {
+              if (!mounted) return;
+              handleResize();
+            });
+            resizeObserver.observe(container);
             
+            // Handle fullscreen resize
             window.addEventListener('resize', handleResize);
             
             // Store cleanup for Three.js scene
@@ -221,18 +241,18 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
 
   return (
     <div className={`fullscreen-modal ${isOpen ? 'active' : ''}`}>
-      <div className="fullscreen-content" ref={containerRef}>
+      <div className="fullscreen-content">
         <div className="fullscreen-header">
           <div className="fullscreen-title">{artifact.code.title}</div>
           <button className="fullscreen-close" onClick={onClose}>&times;</button>
         </div>
         <div className="fullscreen-body">
           <div className="physics-content">
-            {mountError && (
+            {mountError ? (
               <div className="error">
                 Failed to load physics simulation: {mountError}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
