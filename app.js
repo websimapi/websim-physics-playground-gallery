@@ -117,121 +117,185 @@ function PhysicsContainer({ artifact }) {
   const room = new WebsimSocket();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const sandboxId = 'physics-sandbox-' + artifact.id;
+  const [mountError, setMountError] = useState(null);
+  const sandboxId = `physics-sandbox-${artifact.id}`;
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    let cleanup = () => {};
+    
+    // Wrap in try-catch to handle potential mounting errors
+    try {
+      if (!containerRef.current) return;
 
-    const container = containerRef.current;
-    const sandbox = container.querySelector('.physics-content');
-    
-    // Create a shadow root for isolation
-    const shadow = sandbox.attachShadow({ mode: 'closed' });
-    
-    // Create container for the physics content
-    const physicsContainer = document.createElement('div');
-    physicsContainer.id = sandboxId;
-    
-    // Add the HTML content
-    physicsContainer.innerHTML = artifact.code.html;
-    
-    // Add scoped styles
-    const style = document.createElement('style');
-    style.textContent = `
-      /* Reset styles within shadow DOM */
-      :host {
-        all: initial;
-        display: block;
-        position: relative;
-        width: 100%;
-        height: 100%;
-        contain: content;
+      const container = containerRef.current;
+      const sandbox = container.querySelector('.physics-content');
+      
+      if (!sandbox) {
+        throw new Error('Could not find physics content container');
       }
-      ${artifact.code.css}
-    `;
-    
-    // Append style and content to shadow root
-    shadow.appendChild(style);
-    shadow.appendChild(physicsContainer);
-    
-    // Create and add the script in a safe way
-    const script = document.createElement('script');
-    const artifactIdString = String(artifact.id); // Ensure id is a string
-    
-    script.textContent = `
-      (function() {
-        const root = document.currentScript.parentElement;
-        const container = root.getElementById('${sandboxId}');
-        
-        // Utility functions for selecting elements within this shadow DOM only
-        const getElement = function(selector) { return container.querySelector(selector); };
-        const getElements = function(selector) { return container.querySelectorAll(selector); };
-        
-        // Sandbox console logs to prevent interference
-        const sandboxConsole = {
-          log: function() {
-            const args = Array.from(arguments);
-            console.log('[Physics ' + '${artifactIdString}' + ']:', ...args);
-          },
-          error: function() {
-            const args = Array.from(arguments);
-            console.error('[Physics ' + '${artifactIdString}' + ']:', ...args);
-          },
-          warn: function() {
-            const args = Array.from(arguments);
-            console.warn('[Physics ' + '${artifactIdString}' + ']:', ...args);
-          }
-        };
 
-        // Create a sandboxed environment
-        const sandbox = {
-          console: sandboxConsole,
-          container: container,
-          getElement: getElement,
-          getElements: getElements,
-          requestAnimationFrame: window.requestAnimationFrame.bind(window),
-          cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
-          setTimeout: window.setTimeout.bind(window),
-          clearTimeout: window.clearTimeout.bind(window),
-          Math: Object.create(Math)
-        };
-
-        // Run the physics code in the sandbox
-        try {
-          with (sandbox) {
-            (function() {
-              ${artifact.code.js}
-            })();
-          }
-        } catch (error) {
-          sandboxConsole.error('Error in physics simulation:', error);
-        }
-      })();
-    `;
-    
-    shadow.appendChild(script);
-
-    // Cleanup function
-    return () => {
+      // Check if shadow root already exists and remove it
       if (sandbox.shadowRoot) {
-        const cleanupScript = document.createElement('script');
-        cleanupScript.textContent = `
-          (function() {
-            let id = window.requestAnimationFrame(function(){});
-            while(id--) {
-              window.cancelAnimationFrame(id);
-            }
-            let interval = setInterval(function(){}, 9999);
-            while(interval--) {
-              clearInterval(interval);
-            }
-          })();
-        `;
-        sandbox.appendChild(cleanupScript);
         sandbox.innerHTML = '';
+        try {
+          sandbox.detachShadow();
+        } catch (e) {
+          // Some browsers might not support detachShadow
+          console.warn('Could not detach shadow root:', e);
+        }
+      }
+
+      // Create a new shadow root for isolation
+      const shadow = sandbox.attachShadow({ mode: 'closed' });
+      
+      // Create container for the physics content
+      const physicsContainer = document.createElement('div');
+      physicsContainer.id = sandboxId;
+      
+      // Add the HTML content
+      physicsContainer.innerHTML = artifact.code.html || '';
+      
+      // Add scoped styles
+      const style = document.createElement('style');
+      style.textContent = `
+        /* Reset styles within shadow DOM */
+        :host {
+          all: initial;
+          display: block;
+          position: relative;
+          width: 100%;
+          height: 100%;
+          contain: content;
+        }
+        /* Default safety styles */
+        div {
+          position: relative;
+          max-width: 100%;
+        }
+        ${artifact.code.css || ''}
+      `;
+      
+      // Append style and content to shadow root
+      shadow.appendChild(style);
+      shadow.appendChild(physicsContainer);
+      
+      // Create and add the script in a safe way
+      const script = document.createElement('script');
+      const safeId = String(artifact.id).replace(/[^\w-]/g, '');
+      
+      script.textContent = `
+        (function() {
+          try {
+            const root = document.currentScript.parentElement;
+            const container = root.getElementById('${sandboxId}');
+            
+            if (!container) {
+              throw new Error('Container not found');
+            }
+
+            // Utility functions for selecting elements within this shadow DOM only
+            const getElement = (selector) => container.querySelector(selector);
+            const getElements = (selector) => container.querySelectorAll(selector);
+            
+            // Sandbox console logs
+            const sandboxConsole = {
+              log: function() {
+                console.log('[Physics ' + '${safeId}' + ']:', ...Array.from(arguments));
+              },
+              error: function() {
+                console.error('[Physics ' + '${safeId}' + ']:', ...Array.from(arguments));
+              },
+              warn: function() {
+                console.warn('[Physics ' + '${safeId}' + ']:', ...Array.from(arguments));
+              }
+            };
+
+            // Animation frame and timeout tracking for cleanup
+            let activeAnimationFrames = new Set();
+            let activeTimeouts = new Set();
+
+            // Create a sandboxed environment
+            const sandbox = {
+              console: sandboxConsole,
+              container,
+              getElement,
+              getElements,
+              requestAnimationFrame: (cb) => {
+                const id = window.requestAnimationFrame((timestamp) => {
+                  activeAnimationFrames.delete(id);
+                  cb(timestamp);
+                });
+                activeAnimationFrames.add(id);
+                return id;
+              },
+              cancelAnimationFrame: (id) => {
+                activeAnimationFrames.delete(id);
+                window.cancelAnimationFrame(id);
+              },
+              setTimeout: (cb, delay) => {
+                const id = window.setTimeout(() => {
+                  activeTimeouts.delete(id);
+                  cb();
+                }, delay);
+                activeTimeouts.add(id);
+                return id;
+              },
+              clearTimeout: (id) => {
+                activeTimeouts.delete(id);
+                window.clearTimeout(id);
+              },
+              Math: Object.create(Math)
+            };
+
+            // Run the physics code in the sandbox
+            with (sandbox) {
+              (function() {
+                ${artifact.code.js || ''}
+              })();
+            }
+
+            // Set up cleanup function
+            root.cleanup = function() {
+              activeAnimationFrames.forEach(id => window.cancelAnimationFrame(id));
+              activeTimeouts.forEach(id => window.clearTimeout(id));
+              activeAnimationFrames.clear();
+              activeTimeouts.clear();
+            };
+          } catch (error) {
+            console.error('[Physics ${safeId}] Error:', error);
+          }
+        })();
+      `;
+      
+      shadow.appendChild(script);
+
+      // Store cleanup function
+      cleanup = () => {
+        if (sandbox.shadowRoot) {
+          try {
+            if (shadow.querySelector('script')?.cleanup) {
+              shadow.querySelector('script').cleanup();
+            }
+            sandbox.innerHTML = '';
+          } catch (e) {
+            console.warn('Cleanup error:', e);
+          }
+        }
+      };
+    } catch (error) {
+      console.error('Mount error:', error);
+      setMountError(error.message);
+    }
+
+    // Return cleanup function
+    return () => {
+      try {
+        cleanup();
+      } catch (e) {
+        console.warn('Cleanup error:', e);
       }
     };
-  }, [artifact]);
+  }, [artifact.id, artifact.code]);
 
   const handleDelete = async () => {
     if (!window.confirm('Are you sure you want to delete this physics artifact?')) return;
@@ -272,7 +336,13 @@ function PhysicsContainer({ artifact }) {
           ×
         </button>
       )}
-      <div className="physics-content"></div>
+      <div className="physics-content">
+        {mountError && (
+          <div className="error">
+            Failed to load physics simulation: {mountError}
+          </div>
+        )}
+      </div>
       <div className="physics-meta">
         <img 
           className="avatar"
