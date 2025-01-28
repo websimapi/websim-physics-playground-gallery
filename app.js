@@ -1,6 +1,3 @@
-import React, { useState, useEffect, useSyncExternalStore } from 'react';
-import ReactDOM from 'react-dom';
-
 function PhysicsPlayground() {
   const [prompt, setPrompt] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -49,7 +46,7 @@ function PhysicsPlayground() {
             "description": "This demonstration shows a pendulum swinging under the influence of gravity..."
           }
 
-          The code should be self-contained and use SVG for graphics where possible.
+          The code should be self-contained and use SVG for graphics where possible! 
           Ensure all code is properly escaped for JSON.
           
           Create a physics demonstration for: ${prompt}`,
@@ -355,5 +352,3 @@ function PhysicsContainer({ artifact, onExpand }) {
     </div>
   );
 }
-
-ReactDOM.render(<PhysicsPlayground />, document.getElementById('root'));
