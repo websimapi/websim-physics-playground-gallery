@@ -290,7 +290,6 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
             )}
           </div>
         </div>
-      </div>
     </div>
   );
 }
@@ -397,6 +396,30 @@ interface PhysicsArtifact {
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+function Pagination({ currentPage, totalPages, onPageChange }) {
+  return (
+    <div className="pagination">
+      <button 
+        onClick={() => onPageChange(currentPage - 1)} 
+        disabled={currentPage === 1}
+        className="pagination-button"
+      >
+        ←
+      </button>
+      <span className="pagination-info">
+        Page {currentPage} of {totalPages}
+      </span>
+      <button 
+        onClick={() => onPageChange(currentPage + 1)} 
+        disabled={currentPage === totalPages}
+        className="pagination-button"
+      >
+        →
+      </button>
     </div>
   );
 }
@@ -612,100 +635,39 @@ function PhysicsPlayground() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const ITEMS_PER_PAGE = 10;
   const room = new WebsimSocket();
   
-  const artifacts = useSyncExternalStore(
+  // Get all artifacts for counting total pages
+  const allArtifacts = useSyncExternalStore(
     room.collection('physics_artifact').subscribe,
     () => room.collection('physics_artifact').getList()
   );
 
-  // Sort artifacts and calculate pagination
-  const sortedArtifacts = [...artifacts].sort((a, b) => 
-    new Date(b.created_at) - new Date(a.created_at)
-  );
+  // Calculate total pages
+  const totalPages = Math.ceil(allArtifacts.length / ITEMS_PER_PAGE);
 
-  const totalPages = Math.ceil(sortedArtifacts.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const currentArtifacts = sortedArtifacts.slice(startIndex, endIndex);
+  // Get paginated artifacts
+  const paginatedArtifacts = allArtifacts
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
-  const handlePageChange = (pageNumber) => {
-    setCurrentPage(pageNumber);
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    });
-  };
-
-  const renderPagination = () => {
-    const pages = [];
-    const maxVisiblePages = 5;
-    let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
-    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-
-    if (endPage - startPage + 1 < maxVisiblePages) {
-      startPage = Math.max(1, endPage - maxVisiblePages + 1);
+  // Reset to first page when there's a new artifact
+  useEffect(() => {
+    if (allArtifacts.length > 0 && currentPage > totalPages) {
+      setCurrentPage(1);
     }
+  }, [allArtifacts.length, currentPage, totalPages]);
 
-    if (startPage > 1) {
-      pages.push(
-        <button 
-          key="1" 
-          onClick={() => handlePageChange(1)}
-          disabled={currentPage === 1}
-        >
-          1
-        </button>
-      );
-      if (startPage > 2) pages.push(<span key="ellipsis1">...</span>);
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+      // Scroll to top of gallery
+      window.scrollTo({
+        top: document.querySelector('.gallery').offsetTop,
+        behavior: 'smooth'
+      });
     }
-
-    for (let i = startPage; i <= endPage; i++) {
-      pages.push(
-        <button
-          key={i}
-          onClick={() => handlePageChange(i)}
-          className={currentPage === i ? 'active' : ''}
-        >
-          {i}
-        </button>
-      );
-    }
-
-    if (endPage < totalPages) {
-      if (endPage < totalPages - 1) pages.push(<span key="ellipsis2">...</span>);
-      pages.push(
-        <button 
-          key={totalPages} 
-          onClick={() => handlePageChange(totalPages)}
-          disabled={currentPage === totalPages}
-        >
-          {totalPages}
-        </button>
-      );
-    }
-
-    return (
-      <div className="pagination">
-        <button 
-          onClick={() => handlePageChange(currentPage - 1)}
-          disabled={currentPage === 1}
-        >
-          ←
-        </button>
-        {pages}
-        <button 
-          onClick={() => handlePageChange(currentPage + 1)}
-          disabled={currentPage === totalPages}
-        >
-          →
-        </button>
-        <span className="pagination-info">
-          Showing {startIndex + 1}-{Math.min(endIndex, sortedArtifacts.length)} of {sortedArtifacts.length}
-        </span>
-      </div>
-    );
   };
 
   const handleSubmit = async (e) => {
@@ -724,91 +686,92 @@ function PhysicsPlayground() {
         },
         body: JSON.stringify({
           prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
-You have access to Three.js for 3D graphics and CANNON.js for physics simulations.
-The Three.js library (with OrbitControls, GLTFLoader) and CANNON.js are already loaded.
+          You have access to Three.js for 3D graphics and CANNON.js for physics simulations. 
+          The Three.js library (with OrbitControls, GLTFLoader) and CANNON.js are already loaded.
+          
+          You can initialize a Three.js scene using the provided initThreeScene() helper:
+          const { scene, camera, renderer, controls } = initThreeScene();
+          
+          For physics with CANNON.js, you can use it directly via the CANNON global:
+          const world = new CANNON.World();
+          world.gravity.set(0, -9.82, 0);
+          
+          Example with Three.js and CANNON.js:
+          {
+            "html": "<div class='scene-container'></div>",
+            "css": ".scene-container { width: 100%; height: 100%; }",
+            "js": "const { scene, camera, renderer, controls } = initThreeScene();\\n\\
+                  camera.position.set(0, 5, 10);\\n\\
+                  \\n\\
+                  // Physics world\\n\\
+                  const world = new CANNON.World();\\n\\
+                  world.gravity.set(0, -9.82, 0);\\n\\
+                  \\n\\
+                  // Create a ground plane\\n\\
+                  const groundBody = new CANNON.Body({\\n\\
+                    mass: 0,\\n\\
+                    shape: new CANNON.Plane()\\n\\
+                  });\\n\\
+                  groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI/2);\\n\\
+                  world.addBody(groundBody);\\n\\
+                  \\n\\
+                  // Create a sphere\\n\\
+                  const radius = 1;\\n\\
+                  const sphereBody = new CANNON.Body({\\n\\
+                    mass: 5,\\n\\
+                    shape: new CANNON.Sphere(radius)\\n\\
+                  });\\n\\
+                  sphereBody.position.set(0, 10, 0);\\n\\
+                  world.addBody(sphereBody);\\n\\
+                  \\n\\
+                  // Visual sphere\\n\\
+                  const sphereGeometry = new THREE.SphereGeometry(radius);\\n\\
+                  const sphereMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });\\n\\
+                  const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);\\n\\
+                  scene.add(sphereMesh);\\n\\
+                  \\n\\
+                  // Visual ground\\n\\
+                  const groundGeometry = new THREE.PlaneGeometry(20, 20);\\n\\
+                  const groundMaterial = new THREE.MeshPhongMaterial({ color: 0xcccccc });\\n\\
+                  const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);\\n\\
+                  groundMesh.rotation.x = -Math.PI/2;\\n\\
+                  scene.add(groundMesh);\\n\\
+                  \\n\\
+                  function animate() {\\n\\
+                    requestAnimationFrame(animate);\\n\\
+                    \\n\\
+                    // Step the physics world\\n\\
+                    world.step(1/60);\\n\\
+                    \\n\\
+                    // Copy coordinates from CANNON to Three.js\\n\\
+                    sphereMesh.position.copy(sphereBody.position);\\n\\
+                    sphereMesh.quaternion.copy(sphereBody.quaternion);\\n\\
+                    \\n\\
+                    renderer.render(scene, camera);\\n\\
+                  }\\n\\
+                  animate();",
+            "title": "Bouncing Ball Physics",
+            "description": "A demonstration of gravity and collision physics using CANNON.js with Three.js visualization"
+          }
 
-You can initialize a Three.js scene using the provided initThreeScene() helper:
-const { scene, camera, renderer, controls, dispose } = initThreeScene();
+          The response must be valid JSON matching this interface:
 
-For physics with CANNON.js, you can create a physics world:
-const world = new CANNON.World();
-world.gravity.set(0, -9.82, 0);
+          interface PhysicsArtifact {
+            html: string;      // The HTML code for the demonstration
+            css: string;       // The CSS styles for the demonstration
+            js: string;        // The JavaScript code for the demonstration
+            title: string;     // A short title describing the demonstration
+            description: string; // A longer description explaining the physics concept
+          }
 
-Example with Three.js and CANNON.js:
-{
-  "html": "<div class='scene-container'></div>",
-  "css": ".scene-container { width: 100%; height: 100%; }",
-  "js": "const { scene, camera, renderer, controls } = initThreeScene();\\n\\
-    camera.position.set(0, 5, 10);\\n\\
-    \\n\\
-    // Physics world\\n\\
-    const world = new CANNON.World();\\n\\
-    world.gravity.set(0, -9.82, 0);\\n\\
-    \\n\\
-    // Create a ground plane\\n\\
-    const groundBody = new CANNON.Body({\\n\\
-      mass: 0,\\n\\
-      shape: new CANNON.Plane()\\n\\
-    });\\n\\
-    groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI/2);\\n\\
-    world.addBody(groundBody);\\n\\
-    \\n\\
-    // Create a sphere\\n\\
-    const radius = 1;\\n\\
-    const sphereBody = new CANNON.Body({\\n\\
-      mass: 5,\\n\\
-      shape: new CANNON.Sphere(radius)\\n\\
-    });\\n\\
-    sphereBody.position.set(0, 10, 0);\\n\\
-    world.addBody(sphereBody);\\n\\
-    \\n\\
-    // Visual sphere\\n\\
-    const sphereGeometry = new THREE.SphereGeometry(radius);\\n\\
-    const sphereMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });\\n\\
-    const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);\\n\\
-    scene.add(sphereMesh);\\n\\
-    \\n\\
-    // Visual ground\\n\\
-    const groundGeometry = new THREE.PlaneGeometry(20, 20);\\n\\
-    const groundMaterial = new THREE.MeshPhongMaterial({ color: 0xcccccc });\\n\\
-    const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);\\n\\
-    groundMesh.rotation.x = -Math.PI/2;\\n\\
-    scene.add(groundMesh);\\n\\
-    \\n\\
-    function animate() {\\n\\
-      requestAnimationFrame(animate);\\n\\
-      \\n\\
-      // Step the physics world\\n\\
-      world.step(1/60);\\n\\
-      \\n\\
-      // Copy coordinates from CANNON to Three.js\\n\\
-      sphereMesh.position.copy(sphereBody.position);\\n\\
-      sphereMesh.quaternion.copy(sphereBody.quaternion);\\n\\
-      \\n\\
-      renderer.render(scene, camera);\\n\\
-    }\\n\\
-    animate();",
-  "title": "Bouncing Ball Physics",
-  "description": "A demonstration of gravity and collision physics using CANNON.js with Three.js visualization"
-}
-
-The response must be valid JSON matching this interface:
-
-interface PhysicsArtifact {
-  html: string;      // The HTML code for the demonstration
-  css: string;       // The CSS styles for the demonstration
-  js: string;        // The JavaScript code for the demonstration
-  title: string;     // A short title describing the demonstration
-  description: string; // A longer description explaining the physics concept
-}
-
-The code should leverage Three.js for 3D graphics and CANNON.js for physics where appropriate.
-Ensure all code is properly escaped for JSON.
-
-Create a physics demonstration for: ${prompt}`,
+          The code should leverage Three.js for 3D graphics and CANNON.js for physics where appropriate.
+          Ensure all code is properly escaped for JSON.
+          Ensure JavaScript strings are escaped with \\n\\ for newlines and properly escaped quotes.
+          
+          Create a physics demonstration for: ${prompt}`,
           data: prompt
-        })
-      );
+        }),
+      });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -828,7 +791,6 @@ Create a physics demonstration for: ${prompt}`,
       });
 
       setPrompt('');
-      setCurrentPage(1); // Reset to first page after creating new artifact
     } catch (err) {
       console.error('Error details:', err);
       setError('Failed to create physics simulation. Please try again with a different prompt.');
@@ -858,12 +820,18 @@ Create a physics demonstration for: ${prompt}`,
       </div>
 
       <div className="gallery">
-        {currentArtifacts.map(artifact => (
+        {paginatedArtifacts.map(artifact => (
           <PhysicsContainer key={artifact.id} artifact={artifact} />
         ))}
       </div>
 
-      {totalPages > 1 && renderPagination()}
+      {totalPages > 1 && (
+        <Pagination 
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={handlePageChange}
+        />
+      )}
     </div>
   );
 }
