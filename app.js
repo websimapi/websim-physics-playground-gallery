@@ -30,7 +30,7 @@ function PhysicsPlayground() {
         body: JSON.stringify({
           prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
           The response should be valid JSON containing HTML, CSS, and JavaScript code that demonstrates the physics concept.
-          The JavaScript code should be a single function named 'initPhysics' that sets up the simulation.
+          The JavaScript code should contain a setup function and any other necessary functions.
           
           interface Response {
             html: string;
@@ -40,16 +40,17 @@ function PhysicsPlayground() {
             description: string;
           }
           
+          Example response:
           {
             "html": "<div class='simulation'><svg viewBox='0 0 400 300'></svg></div>",
             "css": ".simulation { width: 100%; height: 100%; }",
-            "js": "function initPhysics() { const svg = document.querySelector('svg'); }",
+            "js": "function setup(container) { const svg = container.querySelector('svg'); /* physics code here */ }",
             "title": "Simple Pendulum",
             "description": "Demonstrates harmonic motion of a pendulum"
           }
           Make the response a valid JSON object matching the interface above.
           The code should be self-contained and use SVG for graphics where possible.
-          Wrap all JavaScript code in a function named 'initPhysics'.
+          All JavaScript code should be within the setup function that takes a container parameter.
           
           Prompt: ${prompt}`,
           data: prompt
@@ -140,18 +141,22 @@ function PhysicsContainer({ artifact }) {
       const content = document.createElement('div');
       content.innerHTML = artifact.code.html;
       
-      // Create script element with the physics initialization
-      const script = document.createElement('script');
-      script.textContent = `
-        ${artifact.code.js}
-        // Call the initialization function
-        initPhysics();
-      `;
-      
-      // Append elements in order
+      // Append style and content first
       sandbox.appendChild(style);
       sandbox.appendChild(content);
-      sandbox.appendChild(script);
+      
+      // Create and execute the physics code in a safe way
+      const setupScript = document.createElement('script');
+      setupScript.textContent = `
+        (function() {
+          ${artifact.code.js}
+          // Call the setup function with the content div as the container
+          setup(document.currentScript.parentElement);
+        })();
+      `;
+      
+      // Append the script last
+      sandbox.appendChild(setupScript);
       
     } catch (error) {
       console.error('Error setting up physics container:', error);
