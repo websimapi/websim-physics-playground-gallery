@@ -8,11 +8,6 @@ const {
 function initializePhysics(containerRef, artifact, mounted, setMountError) {
   const logPrefix = `[Physics ${artifact.id}]`;
   console.log(`${logPrefix} Initializing physics for artifact: ${artifact.code.title}`);
-  console.log(`${logPrefix} Code content:`, {
-    html: artifact.code.html,
-    css: artifact.code.css,
-    js: artifact.code.js
-  });
 
   try {
     if (!containerRef.current) {
@@ -34,6 +29,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       if (sandbox.shadowRoot) {
         console.log(`${logPrefix} Clearing existing shadow root`);
         sandbox.shadowRoot.innerHTML = '';
+        shadow = sandbox.shadowRoot;
       } else {
         shadow = sandbox.attachShadow({ mode: 'open' });
       }
@@ -43,12 +39,13 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
     }
 
     console.log(`${logPrefix} Creating wrapper element`);
-    const wrapper = document.createElement('div');
-    wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
+    let wrapper = null;
     try {
+      wrapper = document.createElement('div');
+      wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
       shadow.appendChild(wrapper);
     } catch (e) {
-      console.error(`${logPrefix} Error appending wrapper:`, e);
+      console.error(`${logPrefix} Error creating wrapper:`, e);
       throw e;
     }
 
@@ -85,9 +82,9 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       throw e;
     }
 
+    const eventListeners = new Set();
     console.log(`${logPrefix} Setting up sandbox environment`);
     
-    const eventListeners = new Set();
     const sandboxWindow = {
       innerWidth: wrapper.clientWidth,
       innerHeight: wrapper.clientHeight,
@@ -131,7 +128,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       },
       Math: Object.create(Math),
       THREE: window.THREE,
-      CANNON: window.CANNON,
+      CANNON: window.CANNON, // Explicitly expose CANNON
       initThreeScene: () => {
         console.log(`${logPrefix} Initializing Three.js scene`);
         try {
@@ -294,17 +291,21 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
 
     console.log(`${logPrefix} Executing physics code`);
     try {
-      // Add explicit error checking for invalid characters in the code
-      if (/[\u2018\u2019\u201C\u201D]/.test(artifact.code.js)) {
-        throw new Error('Code contains invalid smart quotes. Please use regular quotes.');
+      // First verify the code can be parsed
+      try {
+        new Function('sandbox', `with (sandbox) { ${artifact.code.js} }`);
+      } catch (syntaxError) {
+        console.error(`${logPrefix} Syntax error in physics code:`, syntaxError);
+        throw new Error(`Code syntax error: ${syntaxError.message}`);
       }
-      
+
       const code = `
         with (sandbox) {
           try {
             ${artifact.code.js || ''}
           } catch (error) {
-            console.error('[Runtime error]:', error);
+            console.error('${logPrefix} Runtime error:', error);
+            throw error;
           }
         }
       `;
@@ -312,7 +313,6 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       (new Function('sandbox', code))(sandboxEnvironment);
     } catch (e) {
       console.error(`${logPrefix} Error executing physics code:`, e);
-      console.error(`${logPrefix} Code that caused error:`, artifact.code.js);
       throw e;
     }
 
@@ -750,6 +750,8 @@ function PhysicsPlayground() {
     setError(null);
 
     try {
+      console.log('Creating new physics simulation from prompt:', prompt);
+
       const response = await fetch('/api/ai_completion', {
         method: 'POST',
         headers: {
@@ -758,74 +760,16 @@ function PhysicsPlayground() {
         },
         body: JSON.stringify({
           prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
-          You have access to Three.js for 3D graphics and CANNON.js for physics simulations. 
+          You have access to Three.js for 3D graphics and CANNON.js for physics simulations.
           The Three.js library (with OrbitControls, GLTFLoader) and CANNON.js are already loaded.
           
           You can initialize a Three.js scene using the provided initThreeScene() helper:
           const { scene, camera, renderer, controls } = initThreeScene();
           
-          For physics with CANNON.js, you can use it directly via the CANNON global:
+          For physics simulations, you have access to CANNON and can use it directly:
           const world = new CANNON.World();
           world.gravity.set(0, -9.82, 0);
           
-          Example with Three.js and CANNON.js:
-          {
-            "html": "<div class='scene-container'></div>",
-            "css": ".scene-container { width: 100%; height: 100%; }",
-            "js": "const { scene, camera, renderer, controls } = initThreeScene();\\n\\
-                  camera.position.set(0, 5, 10);\\n\\
-                  \\n\\
-                  // Physics world\\n\\
-                  const world = new CANNON.World();\\n\\
-                  world.gravity.set(0, -9.82, 0);\\n\\
-                  \\n\\
-                  // Create a ground plane\\n\\
-                  const groundBody = new CANNON.Body({\\n\\
-                    mass: 0,\\n\\
-                    shape: new CANNON.Plane()\\n\\
-                  });\\n\\
-                  groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI/2);\\n\\
-                  world.addBody(groundBody);\\n\\
-                  \\n\\
-                  // Create a sphere\\n\\
-                  const radius = 1;\\n\\
-                  const sphereBody = new CANNON.Body({\\n\\
-                    mass: 5,\\n\\
-                    shape: new CANNON.Sphere(radius)\\n\\
-                  });\\n\\
-                  sphereBody.position.set(0, 10, 0);\\n\\
-                  world.addBody(sphereBody);\\n\\
-                  \\n\\
-                  // Visual sphere\\n\\
-                  const sphereGeometry = new THREE.SphereGeometry(radius);\\n\\
-                  const sphereMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });\\n\\
-                  const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);\\n\\
-                  scene.add(sphereMesh);\\n\\
-                  \\n\\
-                  // Visual ground\\n\\
-                  const groundGeometry = new THREE.PlaneGeometry(20, 20);\\n\\
-                  const groundMaterial = new THREE.MeshPhongMaterial({ color: 0xcccccc });\\n\\
-                  const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);\\n\\
-                  groundMesh.rotation.x = -Math.PI/2;\\n\\
-                  scene.add(groundMesh);\\n\\
-                  \\n\\
-                  function animate() {\\n\\
-                    requestAnimationFrame(animate);\\n\\
-                    \\n\\
-                    // Step the physics world\\n\\
-                    world.step(1/60);\\n\\
-                    \\n\\
-                    // Copy coordinates from CANNON to Three.js\\n\\
-                    sphereMesh.position.copy(sphereBody.position);\\n\\
-                    sphereMesh.quaternion.copy(sphereBody.quaternion);\\n\\
-                    \\n\\
-                    renderer.render(scene, camera);\\n\\
-                  }\\n\\
-                  animate();",
-            "title": "Bouncing Ball Physics",
-            "description": "A demonstration of gravity and collision physics using CANNON.js with Three.js visualization"
-          }
-
           The response must be valid JSON matching this interface:
 
           interface PhysicsArtifact {
@@ -834,6 +778,23 @@ function PhysicsPlayground() {
             js: string;        // The JavaScript code for the demonstration
             title: string;     // A short title describing the demonstration
             description: string; // A longer description explaining the physics concept
+          }
+
+          Important:
+          1. All JavaScript code must be properly escaped for JSON
+          2. Ensure HTML includes necessary containers
+          3. Make sure all variables are properly declared
+          4. All Three.js/CANNON.js operations must happen after scene initialization
+          5. Use window.requestAnimationFrame for animation loops
+          6. Avoid template literals in the response JSON
+
+          Example structure:
+          {
+            "html": "<div class='scene-container'></div>",
+            "css": ".scene-container { width: 100%; height: 100%; }",
+            "js": "const { scene, camera, renderer, controls } = initThreeScene();\\nconst geometry = new THREE.BoxGeometry();\\nconst material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });\\nconst cube = new THREE.Mesh(geometry, material);\\nscene.add(cube);\\n\\nfunction animate() {\\n  requestAnimationFrame(animate);\\n  cube.rotation.x += 0.01;\\n  cube.rotation.y += 0.01;\\n  renderer.render(scene, camera);\\n}\\nanimate();",
+            "title": "Rotating 3D Cube",
+            "description": "A simple demonstration of 3D graphics using Three.js"
           }
 
           Create a physics demonstration for: ${prompt}`,
@@ -846,22 +807,34 @@ function PhysicsPlayground() {
       }
 
       const artifactCode = await response.json();
+      console.log('Received artifact code:', artifactCode);
       
+      // Validate the response format
       if (!artifactCode.html || !artifactCode.css || !artifactCode.js || !artifactCode.title || !artifactCode.description) {
-        throw new Error('Invalid response format from AI');
+        throw new Error('Invalid response format from AI - missing required fields');
       }
 
-      await room.collection('physics_artifact').create({
+      // Validate JavaScript syntax before creating artifact
+      try {
+        new Function('sandbox', `with (sandbox) { ${artifactCode.js} }`);
+      } catch (syntaxError) {
+        console.error('JavaScript syntax error:', syntaxError);
+        throw new Error(`Invalid JavaScript code generated: ${syntaxError.message}`);
+      }
+
+      // Create the artifact
+      const newArtifact = await room.collection('physics_artifact').create({
         prompt,
         code: artifactCode,
         title: artifactCode.title,
         description: artifactCode.description
       });
 
+      console.log('Successfully created new artifact:', newArtifact);
       setPrompt('');
     } catch (err) {
-      console.error('Error details:', err);
-      setError('Failed to create physics simulation. Please try again with a different prompt.');
+      console.error('Error creating physics simulation:', err);
+      setError(`Failed to create physics simulation: ${err.message}`);
     } finally {
       setIsSubmitting(false);
     }
