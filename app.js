@@ -410,6 +410,7 @@ interface PhysicsArtifact {
 
 function PhysicsContainer({ artifact }) {
   const containerRef = React.useRef();
+  const shadowRootRef = React.useRef(null);
   const room = new WebsimSocket();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -419,28 +420,23 @@ function PhysicsContainer({ artifact }) {
   const [iterationCount, setIterationCount] = useState(0);
   const [zoom, setZoom] = useState(artifact.code.zoom || 1);
 
-  useEffect(() => {
-    if (!artifact.code.js.includes('initThreeScene')) {
-      const content = containerRef.current?.querySelector('.physics-content');
-      if (content && content.shadowRoot) {
-        const wrapper = content.shadowRoot.querySelector('div');
-        if (wrapper) {
-          wrapper.style.transform = `scale(${zoom})`;
-          wrapper.style.transformOrigin = 'center center';
-          wrapper.style.width = '100%';
-          wrapper.style.height = '100%';
-          wrapper.style.display = 'flex';
-          wrapper.style.alignItems = 'center';
-          wrapper.style.justifyContent = 'center';
-        }
-      }
+  // Handle zoom updates without re-mounting
+  const updateZoomStyle = (newZoom) => {
+    if (!containerRef.current || !shadowRootRef.current) return;
+    
+    const wrapper = shadowRootRef.current.querySelector('div');
+    if (wrapper && !artifact.code.js.includes('initThreeScene')) {
+      wrapper.style.transform = `scale(${newZoom})`;
+      wrapper.style.transformOrigin = 'center center';
     }
-  }, [zoom, artifact.code.js]);
+  };
 
   const handleUpdateZoom = async (newZoom) => {
     try {
       setZoom(newZoom);
-      // Only update in database after a small delay to prevent too frequent updates
+      updateZoomStyle(newZoom);
+      
+      // Debounce database updates
       const timeoutId = setTimeout(async () => {
         await room.collection('physics_artifact').update(artifact.id, {
           code: {
@@ -449,6 +445,7 @@ function PhysicsContainer({ artifact }) {
           }
         });
       }, 500);
+      
       return () => clearTimeout(timeoutId);
     } catch (error) {
       console.error('Failed to update zoom level:', error);
@@ -456,91 +453,7 @@ function PhysicsContainer({ artifact }) {
   };
 
   useEffect(() => {
-    const countIterations = async () => {
-      try {
-        // Get all artifacts that are iterations of this artifact or in its ancestry chain
-        const allArtifacts = await room.collection('physics_artifact').getList();
-        const iterationChain = new Set();
-        let currentId = artifact.id;
-        
-        // Keep track of visited IDs to prevent infinite loops
-        const visited = new Set();
-
-        // Build the full iteration chain from current artifact back to the original
-        while (currentId && !visited.has(currentId)) {
-          visited.add(currentId);
-          iterationChain.add(currentId);
-          
-          // Find the current artifact in our list
-          const current = allArtifacts.find(a => a.id === currentId);
-          if (current && current.iteration_of) {
-            currentId = current.iteration_of;
-          } else {
-            break;
-          }
-        }
-
-        // Find all artifacts that are iterations of any artifact in our chain
-        for (const chainId of iterationChain) {
-          const children = allArtifacts.filter(a => a.iteration_of === chainId);
-          children.forEach(child => iterationChain.add(child.id));
-        }
-
-        // Convert to array and sort by creation date to get the proper sequence
-        const chainArray = Array.from(iterationChain)
-          .map(id => allArtifacts.find(a => a.id === id))
-          .filter(a => a) // Remove any undefined entries
-          .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-
-        // Find the index of our current artifact in the sequence
-        const position = chainArray.findIndex(a => a.id === artifact.id);
-        
-        // Add 1 since we want to display iteration numbers starting from 1
-        setIterationCount(position + 1);
-      } catch (error) {
-        console.error('Error counting iterations:', error);
-        setIterationCount(1); // Fallback to 1 if there's an error
-      }
-    };
-
-    countIterations();
-  }, [artifact, room]);
-
-  const handleDelete = async (e) => {
-    e.preventDefault();  
-    e.stopPropagation(); 
-    
-    if (isDeleting) return; 
-    
-    if (!window.confirm('Are you sure you want to delete this physics artifact?')) {
-      return;
-    }
-    
-    setIsDeleting(true);
-    try {
-      await room.collection('physics_artifact').delete(artifact.id);
-    } catch (error) {
-      console.error('Failed to delete artifact:', error);
-      alert('Failed to delete artifact. Please try again.');
-      setIsDeleting(false);
-    }
-  };
-
-  const handleFullscreen = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsFullscreen(true);
-  };
-
-  const handleIterate = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsIterateModalOpen(true);
-  };
-
-  useEffect(() => {
     let mounted = true;
-    let shadow = null;
     let cleanup = () => {};
     let sceneCleanup = null;
 
@@ -553,15 +466,25 @@ function PhysicsContainer({ artifact }) {
           throw new Error('Could not find physics content container');
         }
 
+        // Store reference to shadow root
         if (sandbox.shadowRoot) {
+          shadowRootRef.current = sandbox.shadowRoot;
           sandbox.shadowRoot.innerHTML = '';
         } else {
-          shadow = sandbox.attachShadow({ mode: 'open' });
+          shadowRootRef.current = sandbox.attachShadow({ mode: 'open' });
         }
 
         const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
-        shadow.appendChild(wrapper);
+        wrapper.style.cssText = `
+          width: 100%;
+          height: 100%;
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          ${!artifact.code.js.includes('initThreeScene') ? `transform: scale(${zoom}); transform-origin: center center;` : ''}
+        `;
+        shadowRootRef.current.appendChild(wrapper);
 
         const styleElement = document.createElement('style');
         styleElement.textContent = `
@@ -584,7 +507,7 @@ function PhysicsContainer({ artifact }) {
             margin: 0 auto;
           }
         `;
-        shadow.appendChild(styleElement);
+        shadowRootRef.current.appendChild(styleElement);
 
         wrapper.innerHTML = artifact.code.html || '';
 
@@ -628,7 +551,7 @@ function PhysicsContainer({ artifact }) {
               preserveDrawingBuffer: true
             });
             renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
+            renderer QSize(wrapper.clientWidth, wrapper.clientHeight);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.domElement.setAttribute('data-engine', 'three.js'); // Add this line to mark Three.js canvases
@@ -761,8 +684,8 @@ function PhysicsContainer({ artifact }) {
           animations.clear();
           timers.clear();
           intervals.clear();
-          if (shadow) {
-            shadow.innerHTML = '';
+          if (shadowRootRef.current) {
+            shadowRootRef.current.innerHTML = '';
           }
         };
 
@@ -784,13 +707,16 @@ function PhysicsContainer({ artifact }) {
       }
     };
 
+    // Initialize with a slight delay to ensure refs are ready
     const initTimer = setTimeout(initializePhysics, 100);
-    
+
     return () => {
       cleanup();
       clearTimeout(initTimer);
+      // Clear shadow root ref on cleanup
+      shadowRootRef.current = null;
     };
-  }, [artifact.id, artifact.code]);
+  }, [artifact.id, artifact.code]); // Remove zoom from dependencies
 
   const isOwner = artifact.username === room.party.client.username;
 
@@ -800,7 +726,25 @@ function PhysicsContainer({ artifact }) {
         {isOwner && (
           <button 
             className="delete-button" 
-            onClick={handleDelete}
+            onClick={(e) => {
+              e.preventDefault();  
+              e.stopPropagation(); 
+              
+              if (isDeleting) return; 
+              
+              if (!window.confirm('Are you sure you want to delete this physics artifact?')) {
+                return;
+              }
+              
+              setIsDeleting(true);
+              room.collection('physics_artifact').delete(artifact.id).then(() => {
+                setIsDeleting(false);
+              }).catch((error) => {
+                console.error('Failed to delete artifact:', error);
+                alert('Failed to delete artifact. Please try again.');
+                setIsDeleting(false);
+              });
+            }}
             disabled={isDeleting}
             title="Delete this artifact"
             type="button"
@@ -810,7 +754,11 @@ function PhysicsContainer({ artifact }) {
         )}
         <button 
           className="iterate-button" 
-          onClick={handleIterate}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsIterateModalOpen(true);
+          }}
           title="Iterate and improve"
           type="button"
         >
@@ -818,7 +766,11 @@ function PhysicsContainer({ artifact }) {
         </button>
         <button 
           className="fullscreen-button" 
-          onClick={handleFullscreen}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsFullscreen(true);
+          }}
           title="View fullscreen"
           type="button"
         >
@@ -1027,9 +979,10 @@ function PhysicsPlayground() {
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
+const container = document.getElementById('root');
+const root = ReactDOM.createRoot(container);
 root.render(
   <React.StrictMode>
-    <PhysicsPlayground />  
+    <PhysicsPlayground />
   </React.StrictMode>
 );
