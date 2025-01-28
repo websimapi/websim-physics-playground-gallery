@@ -117,7 +117,7 @@ function PhysicsContainer({ artifact }) {
   const room = new WebsimSocket();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const sandboxId = `physics-sandbox-${artifact.id}`;
+  const sandboxId = 'physics-sandbox-' + artifact.id;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -156,34 +156,44 @@ function PhysicsContainer({ artifact }) {
     
     // Create and add the script in a safe way
     const script = document.createElement('script');
+    const artifactIdString = String(artifact.id); // Ensure id is a string
+    
     script.textContent = `
       (function() {
         const root = document.currentScript.parentElement;
         const container = root.getElementById('${sandboxId}');
         
         // Utility functions for selecting elements within this shadow DOM only
-        const getElement = (selector) => container.querySelector(selector);
-        const getElements = (selector) => container.querySelectorAll(selector);
+        const getElement = function(selector) { return container.querySelector(selector); };
+        const getElements = function(selector) { return container.querySelectorAll(selector); };
         
         // Sandbox console logs to prevent interference
         const sandboxConsole = {
-          log: (...args) => console.log(`[Physics ${artifact.id}]:`, ...args),
-          error: (...args) => console.error(`[Physics ${artifact.id}]:`, ...args),
-          warn: (...args) => console.warn(`[Physics ${artifact.id}]:`, ...args),
+          log: function() {
+            const args = Array.from(arguments);
+            console.log('[Physics ' + '${artifactIdString}' + ']:', ...args);
+          },
+          error: function() {
+            const args = Array.from(arguments);
+            console.error('[Physics ' + '${artifactIdString}' + ']:', ...args);
+          },
+          warn: function() {
+            const args = Array.from(arguments);
+            console.warn('[Physics ' + '${artifactIdString}' + ']:', ...args);
+          }
         };
 
         // Create a sandboxed environment
         const sandbox = {
           console: sandboxConsole,
-          container,
-          getElement,
-          getElements,
-          // Add any other safe globals you want to expose
+          container: container,
+          getElement: getElement,
+          getElements: getElements,
           requestAnimationFrame: window.requestAnimationFrame.bind(window),
           cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
           setTimeout: window.setTimeout.bind(window),
           clearTimeout: window.clearTimeout.bind(window),
-          Math: Object.create(Math),
+          Math: Object.create(Math)
         };
 
         // Run the physics code in the sandbox
@@ -204,23 +214,20 @@ function PhysicsContainer({ artifact }) {
     // Cleanup function
     return () => {
       if (sandbox.shadowRoot) {
-        // Clean up any animations or intervals that might be running
         const cleanupScript = document.createElement('script');
         cleanupScript.textContent = `
-          // Cancel all animations
-          let id = window.requestAnimationFrame(function(){});
-          while(id--) {
-            window.cancelAnimationFrame(id);
-          }
-          // Clear all intervals
-          let interval = setInterval(function(){}, 9999);
-          while(interval--) {
-            clearInterval(interval);
-          }
+          (function() {
+            let id = window.requestAnimationFrame(function(){});
+            while(id--) {
+              window.cancelAnimationFrame(id);
+            }
+            let interval = setInterval(function(){}, 9999);
+            while(interval--) {
+              clearInterval(interval);
+            }
+          })();
         `;
-        shadow.appendChild(cleanupScript);
-        
-        // Remove the shadow root content
+        sandbox.appendChild(cleanupScript);
         sandbox.innerHTML = '';
       }
     };
@@ -240,7 +247,6 @@ function PhysicsContainer({ artifact }) {
     }
   };
 
-  // Check if the current user is the creator of this artifact
   const isOwner = artifact.username === room.party.client.username;
 
   const formatDate = (dateString) => {
