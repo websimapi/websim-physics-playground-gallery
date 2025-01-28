@@ -64,10 +64,28 @@ button:disabled {
   overflow: hidden;
 }
 
+.physics-container-header {
+  padding: 15px 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.physics-container-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  color: #1a73e8;
+}
+
+.physics-container-header p {
+  margin: 0;
+  font-size: 14px;
+  color: #666;
+}
+
 .physics-content {
   padding: 20px;
   border-bottom: 1px solid #eee;
   min-height: 200px;
+  position: relative;
 }
 
 .physics-meta {
@@ -76,6 +94,8 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
+  font-size: 14px;
+  color: #666;
 }
 
 .avatar {
@@ -89,6 +109,7 @@ button:disabled {
   padding: 20px;
   font-style: italic;
   color: #666;
+  grid-column: 1 / -1;
 }
 
 .error {

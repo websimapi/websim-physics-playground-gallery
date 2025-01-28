@@ -29,7 +29,24 @@ function PhysicsPlayground() {
         },
         body: JSON.stringify({
           prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
-          Respond with HTML, CSS, and JavaScript code that demonstrates the physics concept.
+          The response should be valid JSON containing HTML, CSS, and JavaScript code that demonstrates the physics concept.
+          
+          interface Response {
+            html: string;
+            css: string;
+            js: string;
+            title: string;
+            description: string;
+          }
+          
+          {
+            "html": "<div class='simulation'><svg viewBox='0 0 400 300'></svg></div>",
+            "css": ".simulation { width: 100%; height: 100%; }",
+            "js": "const svg = document.querySelector('svg');",
+            "title": "Simple Pendulum",
+            "description": "Demonstrates harmonic motion of a pendulum"
+          }
+          Make the response a valid JSON object matching the interface above.
           The code should be self-contained and use SVG for graphics where possible.
           
           Prompt: ${prompt}`,
@@ -37,8 +54,17 @@ function PhysicsPlayground() {
         }),
       });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const artifactCode = await response.json();
       
+      // Validate the response has the required fields
+      if (!artifactCode.html || !artifactCode.css || !artifactCode.js || !artifactCode.title || !artifactCode.description) {
+        throw new Error('Invalid response format from AI');
+      }
+
       // Store the artifact in the database
       await room.collection('physics_artifact').create({
         prompt,
@@ -49,8 +75,8 @@ function PhysicsPlayground() {
 
       setPrompt('');
     } catch (err) {
+      console.error('Error details:', err);
       setError('Failed to create physics simulation. Please try again.');
-      console.error(err);
     } finally {
       setIsSubmitting(false);
     }
@@ -77,9 +103,15 @@ function PhysicsPlayground() {
       </div>
 
       <div className="gallery">
-        {artifacts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(artifact => (
-          <PhysicsContainer key={artifact.id} artifact={artifact} />
-        ))}
+        {artifacts.length === 0 ? (
+          <div className="loading">No physics simulations yet. Create the first one!</div>
+        ) : (
+          artifacts
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+            .map(artifact => (
+              <PhysicsContainer key={artifact.id} artifact={artifact} />
+            ))
+        )}
       </div>
     </div>
   );
@@ -94,18 +126,32 @@ function PhysicsContainer({ artifact }) {
     const container = containerRef.current;
     const sandbox = container.querySelector('.physics-content');
     
-    // Create a safe sandbox for the physics simulation
-    sandbox.innerHTML = artifact.code.html;
-    
-    // Add styles
-    const style = document.createElement('style');
-    style.textContent = artifact.code.css;
-    sandbox.appendChild(style);
-    
-    // Add and execute JavaScript
-    const script = document.createElement('script');
-    script.textContent = artifact.code.js;
-    sandbox.appendChild(script);
+    try {
+      // Clear previous content
+      sandbox.innerHTML = '';
+      
+      // Create a safe sandbox for the physics simulation
+      sandbox.innerHTML = artifact.code.html;
+      
+      // Add styles
+      const style = document.createElement('style');
+      style.textContent = artifact.code.css;
+      sandbox.appendChild(style);
+      
+      // Add and execute JavaScript
+      const script = document.createElement('script');
+      script.textContent = `
+        try {
+          ${artifact.code.js}
+        } catch (error) {
+          console.error('Error in physics simulation:', error);
+        }
+      `;
+      sandbox.appendChild(script);
+    } catch (error) {
+      console.error('Error setting up physics container:', error);
+      sandbox.innerHTML = '<div class="error">Error loading simulation</div>';
+    }
 
     return () => {
       sandbox.innerHTML = '';
@@ -114,6 +160,10 @@ function PhysicsContainer({ artifact }) {
 
   return (
     <div className="physics-container" ref={containerRef}>
+      <div className="physics-container-header">
+        <h3>{artifact.code.title}</h3>
+        <p>{artifact.code.description}</p>
+      </div>
       <div className="physics-content"></div>
       <div className="physics-meta">
         <img 
