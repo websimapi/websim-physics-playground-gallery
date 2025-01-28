@@ -30,6 +30,7 @@ function PhysicsPlayground() {
         body: JSON.stringify({
           prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
           The response should be valid JSON containing HTML, CSS, and JavaScript code that demonstrates the physics concept.
+          The JavaScript code should be a single function named 'initPhysics' that sets up the simulation.
           
           interface Response {
             html: string;
@@ -42,12 +43,13 @@ function PhysicsPlayground() {
           {
             "html": "<div class='simulation'><svg viewBox='0 0 400 300'></svg></div>",
             "css": ".simulation { width: 100%; height: 100%; }",
-            "js": "const svg = document.querySelector('svg');",
+            "js": "function initPhysics() { const svg = document.querySelector('svg'); }",
             "title": "Simple Pendulum",
             "description": "Demonstrates harmonic motion of a pendulum"
           }
           Make the response a valid JSON object matching the interface above.
           The code should be self-contained and use SVG for graphics where possible.
+          Wrap all JavaScript code in a function named 'initPhysics'.
           
           Prompt: ${prompt}`,
           data: prompt
@@ -130,31 +132,37 @@ function PhysicsContainer({ artifact }) {
       // Clear previous content
       sandbox.innerHTML = '';
       
-      // Create a safe sandbox for the physics simulation
-      sandbox.innerHTML = artifact.code.html;
-      
-      // Add styles
+      // Create a style element
       const style = document.createElement('style');
       style.textContent = artifact.code.css;
-      sandbox.appendChild(style);
       
-      // Add and execute JavaScript
+      // Create the HTML content wrapper
+      const content = document.createElement('div');
+      content.innerHTML = artifact.code.html;
+      
+      // Create script element with the physics initialization
       const script = document.createElement('script');
       script.textContent = `
-        try {
-          ${artifact.code.js}
-        } catch (error) {
-          console.error('Error in physics simulation:', error);
-        }
+        ${artifact.code.js}
+        // Call the initialization function
+        initPhysics();
       `;
+      
+      // Append elements in order
+      sandbox.appendChild(style);
+      sandbox.appendChild(content);
       sandbox.appendChild(script);
+      
     } catch (error) {
       console.error('Error setting up physics container:', error);
       sandbox.innerHTML = '<div class="error">Error loading simulation</div>';
     }
 
+    // Cleanup function
     return () => {
-      sandbox.innerHTML = '';
+      if (sandbox) {
+        sandbox.innerHTML = '';
+      }
     };
   }, [artifact]);
 
