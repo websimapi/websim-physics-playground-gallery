@@ -28,7 +28,6 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
         }
 
         const wrapper = document.createElement('div');
-        wrapper.className = 'physics-wrapper';
         wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
         shadow.appendChild(wrapper);
 
@@ -41,18 +40,9 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
             width: 100%;
             height: 100%;
             contain: content;
-            background: #f8f9fa;
-            border-radius: 8px;
-            overflow: hidden;
-          }
-          .physics-wrapper {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
           }
           ${artifact.code.css || ''}
+          
           /* Only apply special centering for Three.js canvases */
           canvas[data-engine="three.js"] {
             display: block;
@@ -61,24 +51,19 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
         `;
         shadow.appendChild(styleElement);
 
-        // Create container for user HTML
-        const userContent = document.createElement('div');
-        userContent.className = 'user-content';
-        userContent.style.cssText = 'width: 100%; height: 100%;';
-        userContent.innerHTML = artifact.code.html || '';
-        wrapper.appendChild(userContent);
+        wrapper.innerHTML = artifact.code.html || '';
 
         const sandboxEnvironment = {
-          rootElement: userContent,
+          rootElement: wrapper,
           document: {
-            getElementById: (id) => userContent.querySelector('#' + id),
-            querySelector: (sel) => userContent.querySelector(sel),
-            querySelectorAll: (sel) => userContent.querySelectorAll(sel),
+            getElementById: (id) => wrapper.querySelector('#' + id),
+            querySelector: (sel) => wrapper.querySelector(sel),
+            querySelectorAll: (sel) => wrapper.querySelectorAll(sel),
             createElement: (tag) => document.createElement(tag),
           },
           window: {
-            innerWidth: userContent.clientWidth,
-            innerHeight: userContent.clientHeight,
+            innerWidth: wrapper.clientWidth,
+            innerHeight: wrapper.clientHeight,
           },
           console: {
             log: (...args) => console.log(`[Physics ${artifact.id} Fullscreen]:`, ...args),
@@ -89,47 +74,102 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
           THREE: window.THREE,
           initThreeScene: () => {
             const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf8f9fa);
+            
+            // Find or create container
+            let container = wrapper.querySelector('.scene-container');
+            if (!container) {
+              container = document.createElement('div');
+              container.className = 'scene-container';
+              wrapper.appendChild(container);
+            }
+            
+            // Create camera with better default position for preview
+            const aspectRatio = container.clientWidth / container.clientHeight;
             const camera = new THREE.PerspectiveCamera(
-              75,
-              wrapper.clientWidth / wrapper.clientHeight,
+              60, // Wider FOV for better preview
+              aspectRatio,
               0.1,
               1000
             );
+            camera.position.set(4, 4, 4); // Position camera at angle for better preview
+            camera.lookAt(0, 0, 0);
             
-            const renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
-            renderer.domElement.setAttribute('data-engine', 'three.js');
-            wrapper.appendChild(renderer.domElement);
+            const renderer = new THREE.WebGLRenderer({ 
+              antialias: true,
+              alpha: true,
+              preserveDrawingBuffer: true
+            });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             
-            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            // Only append if container exists and renderer not already appended
+            if (container && !container.querySelector('canvas')) {
+              container.appendChild(renderer.domElement);
+            }
             
-            // Add ambient light
+            // Add better lighting setup
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
             scene.add(ambientLight);
             
-            // Add directional light
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-            directionalLight.position.set(5, 5, 5);
-            scene.add(directionalLight);
+            const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            mainLight.position.set(5, 5, 5);
+            mainLight.castShadow = true;
+            mainLight.shadow.mapSize.width = 1024;
+            mainLight.shadow.mapSize.height = 1024;
+            scene.add(mainLight);
             
-            // Handle fullscreen resize
+            const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+            fillLight.position.set(-5, 0, -5);
+            scene.add(fillLight);
+            
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = true;
+            controls.enableZoom = true;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 1;
+            
+            // Add a subtle grid for better spatial reference
+            const gridHelper = new THREE.GridHelper(10, 10, 0xcccccc, 0xeeeeee);
+            gridHelper.material.opacity = 0.2;
+            gridHelper.material.transparent = true;
+            scene.add(gridHelper);
+            
+            // Handle resize
             const handleResize = () => {
-              const width = wrapper.clientWidth;
-              const height = wrapper.clientHeight;
-              camera.aspect = width / height;
+              if (!container) return;
+              const width = container.clientWidth;
+              const height = container.clientHeight;
+              const aspect = width / height;
+              
+              camera.aspect = aspect;
               camera.updateProjectionMatrix();
               renderer.setSize(width, height, false);
             };
             
             window.addEventListener('resize', handleResize);
             
-            // Store cleanup for Three.js scene
+            // Animation loop with controls update
+            function animate() {
+              if (!mounted) return;
+              requestAnimationFrame(animate);
+              controls.update();
+              renderer.render(scene, camera);
+            }
+            animate();
+            
             sceneCleanup = () => {
               window.removeEventListener('resize', handleResize);
-              controls.dispose();
-              renderer.dispose();
-              if (renderer.domElement && renderer.domElement.parentNode) {
-                renderer.domElement.parentNode.removeChild(renderer.domElement);
+              if (controls) controls.dispose();
+              if (renderer) {
+                renderer.dispose();
+                if (renderer.domElement && renderer.domElement.parentNode) {
+                  renderer.domElement.parentNode.removeChild(renderer.domElement);
+                }
               }
             };
             
@@ -196,7 +236,6 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
           animations.forEach(id => window.cancelAnimationFrame(id));
           timers.forEach(id => window.clearTimeout(id));
           intervals.forEach(id => window.clearInterval(id));
-          if (sceneCleanup) sceneCleanup();
           animations.clear();
           timers.clear();
           intervals.clear();
@@ -488,7 +527,6 @@ function PhysicsContainer({ artifact }) {
         }
 
         const wrapper = document.createElement('div');
-        wrapper.className = 'physics-wrapper';
         wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
         shadow.appendChild(wrapper);
 
@@ -505,14 +543,8 @@ function PhysicsContainer({ artifact }) {
             border-radius: 8px;
             overflow: hidden;
           }
-          .physics-wrapper {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
           ${artifact.code.css || ''}
+          
           /* Only apply special centering for Three.js canvases */
           canvas[data-engine="three.js"] {
             display: block;
@@ -521,24 +553,19 @@ function PhysicsContainer({ artifact }) {
         `;
         shadow.appendChild(styleElement);
 
-        // Create container for user HTML
-        const userContent = document.createElement('div');
-        userContent.className = 'user-content';
-        userContent.style.cssText = 'width: 100%; height: 100%;';
-        userContent.innerHTML = artifact.code.html || '';
-        wrapper.appendChild(userContent);
+        wrapper.innerHTML = artifact.code.html || '';
 
         const sandboxEnvironment = {
-          rootElement: userContent,
+          rootElement: wrapper,
           document: {
-            getElementById: (id) => userContent.querySelector('#' + id),
-            querySelector: (sel) => userContent.querySelector(sel),
-            querySelectorAll: (sel) => userContent.querySelectorAll(sel),
+            getElementById: (id) => wrapper.querySelector('#' + id),
+            querySelector: (sel) => wrapper.querySelector(sel),
+            querySelectorAll: (sel) => wrapper.querySelectorAll(sel),
             createElement: (tag) => document.createElement(tag),
           },
           window: {
-            innerWidth: userContent.clientWidth,
-            innerHeight: userContent.clientHeight,
+            innerWidth: wrapper.clientWidth,
+            innerHeight: wrapper.clientHeight,
           },
           console: {
             log: (...args) => console.log(`[Physics ${artifact.id}]:`, ...args),
@@ -551,8 +578,16 @@ function PhysicsContainer({ artifact }) {
             const scene = new THREE.Scene();
             scene.background = new THREE.Color(0xf8f9fa);
             
+            // Find or create container
+            let container = wrapper.querySelector('.scene-container');
+            if (!container) {
+              container = document.createElement('div');
+              container.className = 'scene-container';
+              wrapper.appendChild(container);
+            }
+            
             // Create camera with better default position for preview
-            const aspectRatio = wrapper.clientWidth / wrapper.clientHeight;
+            const aspectRatio = container.clientWidth / container.clientHeight;
             const camera = new THREE.PerspectiveCamera(
               60, // Wider FOV for better preview
               aspectRatio,
@@ -568,11 +603,14 @@ function PhysicsContainer({ artifact }) {
               preserveDrawingBuffer: true
             });
             renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
+            renderer.setSize(container.clientWidth, container.clientHeight);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            renderer.domElement.setAttribute('data-engine', 'three.js'); // Add this line to mark Three.js canvases
-            wrapper.appendChild(renderer.domElement);
+            
+            // Only append if container exists and renderer not already appended
+            if (container && !container.querySelector('canvas')) {
+              container.appendChild(renderer.domElement);
+            }
             
             // Add better lighting setup
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
@@ -594,7 +632,7 @@ function PhysicsContainer({ artifact }) {
             controls.dampingFactor = 0.05;
             controls.screenSpacePanning = true;
             controls.enableZoom = true;
-            controls.autoRotate = true; // Auto-rotate for preview
+            controls.autoRotate = true;
             controls.autoRotateSpeed = 1;
             
             // Add a subtle grid for better spatial reference
@@ -605,8 +643,9 @@ function PhysicsContainer({ artifact }) {
             
             // Handle resize
             const handleResize = () => {
-              const width = wrapper.clientWidth;
-              const height = wrapper.clientHeight;
+              if (!container) return;
+              const width = container.clientWidth;
+              const height = container.clientHeight;
               const aspect = width / height;
               
               camera.aspect = aspect;
@@ -627,10 +666,12 @@ function PhysicsContainer({ artifact }) {
             
             sceneCleanup = () => {
               window.removeEventListener('resize', handleResize);
-              controls.dispose();
-              renderer.dispose();
-              if (renderer.domElement && renderer.domElement.parentNode) {
-                renderer.domElement.parentNode.removeChild(renderer.domElement);
+              if (controls) controls.dispose();
+              if (renderer) {
+                renderer.dispose();
+                if (renderer.domElement && renderer.domElement.parentNode) {
+                  renderer.domElement.parentNode.removeChild(renderer.domElement);
+                }
               }
             };
             
@@ -962,5 +1003,4 @@ function PhysicsPlayground() {
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<PhysicsPlayground />);
+ReactDOM.render(<PhysicsPlayground />, document.getElementById('root'));
