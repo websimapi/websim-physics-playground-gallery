@@ -119,6 +119,113 @@ function PhysicsContainer({ artifact }) {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const sandboxId = `physics-sandbox-${artifact.id}`;
 
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const container = containerRef.current;
+    const sandbox = container.querySelector('.physics-content');
+    
+    // Create a shadow root for isolation
+    const shadow = sandbox.attachShadow({ mode: 'closed' });
+    
+    // Create container for the physics content
+    const physicsContainer = document.createElement('div');
+    physicsContainer.id = sandboxId;
+    
+    // Add the HTML content
+    physicsContainer.innerHTML = artifact.code.html;
+    
+    // Add scoped styles
+    const style = document.createElement('style');
+    style.textContent = `
+      /* Reset styles within shadow DOM */
+      :host {
+        all: initial;
+        display: block;
+        position: relative;
+        width: 100%;
+        height: 100%;
+        contain: content;
+      }
+      ${artifact.code.css}
+    `;
+    
+    // Append style and content to shadow root
+    shadow.appendChild(style);
+    shadow.appendChild(physicsContainer);
+    
+    // Create and add the script in a safe way
+    const script = document.createElement('script');
+    script.textContent = `
+      (function() {
+        const root = document.currentScript.parentElement;
+        const container = root.getElementById('${sandboxId}');
+        
+        // Utility functions for selecting elements within this shadow DOM only
+        const getElement = (selector) => container.querySelector(selector);
+        const getElements = (selector) => container.querySelectorAll(selector);
+        
+        // Sandbox console logs to prevent interference
+        const sandboxConsole = {
+          log: (...args) => console.log(`[Physics ${artifact.id}]:`, ...args),
+          error: (...args) => console.error(`[Physics ${artifact.id}]:`, ...args),
+          warn: (...args) => console.warn(`[Physics ${artifact.id}]:`, ...args),
+        };
+
+        // Create a sandboxed environment
+        const sandbox = {
+          console: sandboxConsole,
+          container,
+          getElement,
+          getElements,
+          // Add any other safe globals you want to expose
+          requestAnimationFrame: window.requestAnimationFrame.bind(window),
+          cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
+          setTimeout: window.setTimeout.bind(window),
+          clearTimeout: window.clearTimeout.bind(window),
+          Math: Object.create(Math),
+        };
+
+        // Run the physics code in the sandbox
+        try {
+          with (sandbox) {
+            (function() {
+              ${artifact.code.js}
+            })();
+          }
+        } catch (error) {
+          sandboxConsole.error('Error in physics simulation:', error);
+        }
+      })();
+    `;
+    
+    shadow.appendChild(script);
+
+    // Cleanup function
+    return () => {
+      if (sandbox.shadowRoot) {
+        // Clean up any animations or intervals that might be running
+        const cleanupScript = document.createElement('script');
+        cleanupScript.textContent = `
+          // Cancel all animations
+          let id = window.requestAnimationFrame(function(){});
+          while(id--) {
+            window.cancelAnimationFrame(id);
+          }
+          // Clear all intervals
+          let interval = setInterval(function(){}, 9999);
+          while(interval--) {
+            clearInterval(interval);
+          }
+        `;
+        shadow.appendChild(cleanupScript);
+        
+        // Remove the shadow root content
+        sandbox.innerHTML = '';
+      }
+    };
+  }, [artifact]);
+
   const handleDelete = async () => {
     if (!window.confirm('Are you sure you want to delete this physics artifact?')) return;
     
@@ -146,61 +253,6 @@ function PhysicsContainer({ artifact }) {
       minute: '2-digit'
     }).format(date);
   };
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const container = containerRef.current;
-    const sandbox = container.querySelector('.physics-content');
-    
-    // Create a unique namespace for this physics simulation
-    const uniquePrefix = `physics_${artifact.id}_`;
-    
-    // Modify the code to use scoped class names
-    let modifiedHtml = artifact.code.html.replace(/class="([^"]+)"/g, (match, className) => {
-      return `class="${uniquePrefix}${className}"`;
-    });
-    modifiedHtml = modifiedHtml.replace(/id="([^"]+)"/g, (match, id) => {
-      return `id="${uniquePrefix}${id}"`;
-    });
-
-    // Modify CSS to scope all selectors
-    let modifiedCss = artifact.code.css.replace(/([^\n,{]+)(?=[,{])/g, (selector) => {
-      // Don't prefix if it's already prefixed or if it's a special selector
-      if (selector.includes(uniquePrefix) || selector.trim().startsWith('@') || selector.trim().startsWith('from') || selector.trim().startsWith('to')) {
-        return selector;
-      }
-      return `.${uniquePrefix}${selector.trim()}`;
-    });
-
-    // Modify JavaScript to use scoped selectors and wrap in IIFE
-    let modifiedJs = `
-      (function() {
-        const container = document.getElementById('${sandboxId}');
-        const getElement = (selector) => container.querySelector('.${uniquePrefix}' + selector);
-        const getElements = (selector) => container.querySelectorAll('.${uniquePrefix}' + selector);
-        ${artifact.code.js}
-      })();
-    `;
-
-    // Set up the sandbox with scoped content
-    sandbox.id = sandboxId;
-    sandbox.innerHTML = modifiedHtml;
-    
-    // Add scoped styles
-    const style = document.createElement('style');
-    style.textContent = modifiedCss;
-    sandbox.appendChild(style);
-    
-    // Add and execute scoped JavaScript
-    const script = document.createElement('script');
-    script.textContent = modifiedJs;
-    sandbox.appendChild(script);
-
-    return () => {
-      sandbox.innerHTML = '';
-    };
-  }, [artifact]);
 
   return (
     <div className="physics-container" ref={containerRef}>
