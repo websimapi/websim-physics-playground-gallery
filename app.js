@@ -891,7 +891,7 @@ function PhysicsPlayground() {
           Create a physics demonstration for: ${prompt}`,
           data: prompt
         }),
-      );
+      });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
