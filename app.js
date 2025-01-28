@@ -1,73 +1,3 @@
-const codeUtils = {
-  // Format code using Prettier
-  formatCode(code, parser = 'babel') {
-    try {
-      return prettier.format(code, {
-        parser,
-        plugins: prettierPlugins,
-        semi: true,
-        singleQuote: true,
-        printWidth: 80,
-        tabWidth: 2,
-      });
-    } catch (error) {
-      console.error('Prettier formatting failed:', error);
-      return code;
-    }
-  },
-
-  // Clean and normalize JavaScript code
-  cleanJavaScript(code) {
-    try {
-      // Remove template literals and convert to concatenation
-      let cleaned = code
-        .replace(/`/g, "'")
-        .replace(/\$\{([^}]+)\}/g, "' + ($1) + '")
-        .trim();
-
-      // Attempt to format with Prettier
-      cleaned = this.formatCode(cleaned);
-
-      // Verify the code is valid JavaScript
-      new Function('sandbox', `with (sandbox) { ${cleaned} }`);
-
-      return cleaned;
-    } catch (error) {
-      throw new Error(`Code cleaning failed: ${error.message}`);
-    }
-  },
-
-  // Verify and format the entire artifact code
-  validateArtifactCode(artifactCode) {
-    try {
-      const { html, css, js, title, description } = artifactCode;
-
-      if (!html || !css || !js || !title || !description) {
-        throw new Error('Missing required fields in artifact code');
-      }
-
-      // Format HTML
-      const formattedHtml = this.formatCode(html, 'html');
-
-      // Format CSS
-      const formattedCss = this.formatCode(css, 'css');
-
-      // Clean and format JavaScript
-      const formattedJs = this.cleanJavaScript(js);
-
-      return {
-        html: formattedHtml,
-        css: formattedCss,
-        js: formattedJs,
-        title,
-        description,
-      };
-    } catch (error) {
-      throw new Error(`Artifact validation failed: ${error.message}`);
-    }
-  }
-};
-
 const {
   useState,
   useEffect,
@@ -77,7 +7,7 @@ const {
 
 function initializePhysics(containerRef, artifact, mounted, setMountError) {
   const logPrefix = `[Physics ${artifact.id}]`;
-  console.log(`${logPrefix} Initializing physics for artifact:`, artifact.code.title);
+  console.log(`${logPrefix} Initializing physics for artifact: ${artifact.code.title}`);
 
   try {
     if (!containerRef.current) {
@@ -109,13 +39,12 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
     }
 
     console.log(`${logPrefix} Creating wrapper element`);
-    let wrapper = null;
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
     try {
-      wrapper = document.createElement('div');
-      wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
       shadow.appendChild(wrapper);
     } catch (e) {
-      console.error(`${logPrefix} Error creating wrapper:`, e);
+      console.error(`${logPrefix} Error appending wrapper:`, e);
       throw e;
     }
 
@@ -361,25 +290,31 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
 
     console.log(`${logPrefix} Executing physics code`);
     try {
-      // Clean and format the code before execution
-      const cleanedCode = codeUtils.cleanJavaScript(artifact.code.js);
-      console.log(`${logPrefix} Formatted code:`, cleanedCode);
-      
-      const wrappedCode = `
+      const code = `
         with (sandbox) {
           try {
-            ${cleanedCode}
+            ${artifact.code.js || ''}
           } catch (error) {
-            console.error('${logPrefix} Runtime error:', error);
-            throw error;
+            console.error('[Runtime error]:', error);
           }
         }
       `;
+      
+      let scriptFunction;
+      try {
+        scriptFunction = new Function('sandbox', code);
+      } catch (syntaxError) {
+        console.error(`${logPrefix} Syntax error in artifact code:`, syntaxError);
+        setMountError(`Syntax error in artifact code: ${syntaxError.message}`);
+        return () => {};
+      }
 
-      new Function('sandbox', wrappedCode)(sandboxEnvironment);
+      scriptFunction(sandboxEnvironment);
+
     } catch (e) {
       console.error(`${logPrefix} Error executing physics code:`, e);
-      throw e;
+      setMountError(`Error executing physics code: ${e.message}`);
+      return () => {};
     }
 
     console.log(`${logPrefix} Initialization complete`);
@@ -816,8 +751,6 @@ function PhysicsPlayground() {
     setError(null);
 
     try {
-      console.log('Creating new physics simulation from prompt:', prompt);
-
       const response = await fetch('/api/ai_completion', {
         method: 'POST',
         headers: {
@@ -826,16 +759,10 @@ function PhysicsPlayground() {
         },
         body: JSON.stringify({
           prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
-          You have access to Three.js for 3D graphics and CANNON.js for physics simulations.
-          The Three.js library (with OrbitControls, GLTFLoader) and CANNON.js are already loaded.
-          
-          You can initialize a Three.js scene using the provided initThreeScene() helper:
-          const { scene, camera, renderer, controls } = initThreeScene();
-          
-          For physics simulations, you have access to CANNON and can use it directly:
-          const world = new CANNON.World();
-          world.gravity.set(0, -9.82, 0);
-          
+          You have access to Three.js for 3D graphics and CANNON.js for physics simulations. The Three.js library (with OrbitControls, GLTFLoader) and CANNON.js are already loaded.
+
+          Ensure that all code snippets are properly escaped for inclusion in JSON strings. Avoid using unescaped backticks or other characters that may cause syntax errors. Use double quotes for strings inside the code.
+
           The response must be valid JSON matching this interface:
 
           interface PhysicsArtifact {
@@ -846,14 +773,6 @@ function PhysicsPlayground() {
             description: string; // A longer description explaining the physics concept
           }
 
-          Important:
-          1. Write clean, standard JavaScript - no template literals
-          2. Use only single quotes for strings
-          3. Ensure proper variable declarations
-          4. Initialize Three.js/CANNON.js after scene setup
-          5. Use window.requestAnimationFrame for animation loops
-          6. Properly escape all strings and quotes
-
           Create a physics demonstration for: ${prompt}`,
           data: prompt
         }),
@@ -863,26 +782,23 @@ function PhysicsPlayground() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      let artifactCode = await response.json();
-      console.log('Received artifact code:', artifactCode);
+      const artifactCode = await response.json();
       
-      // Format and validate the code
-      artifactCode = codeUtils.validateArtifactCode(artifactCode);
-      console.log('Formatted and validated code:', artifactCode);
+      if (!artifactCode.html || !artifactCode.css || !artifactCode.js || !artifactCode.title || !artifactCode.description) {
+        throw new Error('Invalid response format from AI');
+      }
 
-      // Create the artifact
-      const newArtifact = await room.collection('physics_artifact').create({
+      await room.collection('physics_artifact').create({
         prompt,
         code: artifactCode,
         title: artifactCode.title,
         description: artifactCode.description
       });
 
-      console.log('Successfully created new artifact:', newArtifact);
       setPrompt('');
     } catch (err) {
-      console.error('Error creating physics simulation:', err);
-      setError(`Failed to create physics simulation: ${err.message}`);
+      console.error('Error details:', err);
+      setError('Failed to create physics simulation. Please try again with a different prompt.');
     } finally {
       setIsSubmitting(false);
     }
