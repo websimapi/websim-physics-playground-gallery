@@ -106,24 +106,19 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
         }
       },
       requestAnimationFrame: (cb) => window.requestAnimationFrame(cb),
-      cancelAnimationFrame: (id) => window.cancelAnimationFrame(id),
       devicePixelRatio: window.devicePixelRatio,
       dispatchEvent: (event) => window.dispatchEvent(event),
     };
 
-    const sandboxDocument = {
-      getElementById: (id) => wrapper.querySelector('#' + id),
-      querySelector: (sel) => wrapper.querySelector(sel),
-      querySelectorAll: (sel) => wrapper.querySelectorAll(sel),
-      createElement: (tag) => document.createElement(tag),
-      createElementNS: (ns, tag) => document.createElementNS(ns, tag),
-      body: wrapper,
-      head: shadow,
-    };
-
     const sandboxEnvironment = {
       rootElement: wrapper,
-      document: sandboxDocument,
+      document: {
+        getElementById: (id) => wrapper.querySelector('#' + id),
+        querySelector: (sel) => wrapper.querySelector(sel),
+        querySelectorAll: (sel) => wrapper.querySelectorAll(sel),
+        createElement: (tag) => document.createElement(tag),
+        createElementNS: (ns, tag) => document.createElementNS(ns, tag),
+      },
       window: sandboxWindow,
       console: {
         log: (...args) => console.log(logPrefix, ...args),
@@ -216,7 +211,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
           
           function animate() {
             if (!mounted) return;
-            sandboxEnvironment.requestAnimationFrame(animate);
+            requestAnimationFrame(animate);
             controls.update();
             renderer.render(scene, camera);
           }
@@ -253,7 +248,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
     const intervals = new Set();
 
     sandboxEnvironment.requestAnimationFrame = (cb) => {
-      const id = sandboxWindow.requestAnimationFrame((timestamp) => {
+      const id = window.requestAnimationFrame((timestamp) => {
         if (!animations.has(id) || !mounted) return;
         animations.delete(id);
         try {
@@ -264,10 +259,6 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       });
       animations.add(id);
       return id;
-    };
-
-    sandboxEnvironment.cancelAnimationFrame = (id) => {
-      sandboxWindow.cancelAnimationFrame(id);
     };
 
     sandboxEnvironment.setTimeout = (cb, delay) => {
@@ -284,10 +275,6 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       return id;
     };
 
-    sandboxEnvironment.clearTimeout = (id) => {
-      window.clearTimeout(id);
-    };
-
     sandboxEnvironment.setInterval = (cb, delay) => {
       const id = window.setInterval(() => {
         if (!intervals.has(id) || !mounted) return;
@@ -301,50 +288,28 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       return id;
     };
 
-    sandboxEnvironment.clearInterval = (id) => {
-      window.clearInterval(id);
-    };
-
     console.log(`${logPrefix} Executing physics code`);
     try {
-      const scriptFunction = new Function(
-        'window',
-        'document',
-        'console',
-        'rootElement',
-        'initThreeScene',
-        'THREE',
-        'CANNON',
-        'requestAnimationFrame',
-        'cancelAnimationFrame',
-        'setTimeout',
-        'clearTimeout',
-        'setInterval',
-        'clearInterval',
-        `
-        'use strict';
-        try {
-          ${artifact.code.js || ''}
-        } catch (error) {
-          console.error('[Runtime error]:', error);
+      const code = `
+        with (sandbox) {
+          try {
+            ${artifact.code.js || ''}
+          } catch (error) {
+            console.error('[Runtime error]:', error);
+          }
         }
-      `);
+      `;
+      
+      let scriptFunction;
+      try {
+        scriptFunction = new Function('sandbox', code);
+      } catch (syntaxError) {
+        console.error(`${logPrefix} Syntax error in artifact code:`, syntaxError);
+        setMountError(`Syntax error in artifact code: ${syntaxError.message}`);
+        return () => {};
+      }
 
-      scriptFunction(
-        sandboxEnvironment.window,
-        sandboxEnvironment.document,
-        sandboxEnvironment.console,
-        sandboxEnvironment.rootElement,
-        sandboxEnvironment.initThreeScene,
-        sandboxEnvironment.THREE,
-        sandboxEnvironment.CANNON,
-        sandboxEnvironment.requestAnimationFrame,
-        sandboxEnvironment.cancelAnimationFrame,
-        sandboxEnvironment.setTimeout,
-        sandboxEnvironment.clearTimeout,
-        sandboxEnvironment.setInterval,
-        sandboxEnvironment.clearInterval
-      );
+      scriptFunction(sandboxEnvironment);
 
     } catch (e) {
       console.error(`${logPrefix} Error executing physics code:`, e);
@@ -357,7 +322,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       console.log(`${logPrefix} Cleaning up`);
       try {
         mounted = false;
-        animations.forEach(id => sandboxWindow.cancelAnimationFrame(id));
+        animations.forEach(id => window.cancelAnimationFrame(id));
         timers.forEach(id => window.clearTimeout(id));
         intervals.forEach(id => window.clearInterval(id));
         eventListeners.forEach(([event, handler, options]) => {
@@ -840,38 +805,213 @@ function PhysicsPlayground() {
   };
 
   return (
-    <div className="container">
-      <div className="input-section">
-        <form onSubmit={handleSubmit}>
-          <div className="input-group">
-            <input
-              type="text"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Describe a physics concept or experiment..."
-              disabled={isSubmitting}
+    <>
+      <div className="container">
+        <div className="input-section">
+          <form onSubmit={handleSubmit}>
+            <div className="input-group">
+              <input
+                type="text"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="Describe a physics concept or experiment..."
+                disabled={isSubmitting}
+              />
+              <button type="submit" disabled={isSubmitting || !prompt.trim()}>
+                {isSubmitting ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </form>
+          {error && <div className="error">{error}</div>}
+        </div>
+
+        <div className="gallery">
+          {paginatedArtifacts.map(artifact => (
+            <PhysicsContainer key={artifact.id} artifact={artifact} />
+          ))}
+        </div>
+
+        {totalPages > 1 && (
+          <Pagination 
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+          />
+        )}
+      </div>
+      <Chat />
+    </>
+  );
+}
+
+function Chat() {
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [typingUsers, setTypingUsers] = useState(new Set());
+  const messagesEndRef = useRef(null);
+  const room = new WebsimSocket();
+  
+  // Get current peers for online count
+  const peers = useSyncExternalStore(
+    room.party.subscribe,
+    () => room.party.peers
+  );
+  
+  const openCount = Object.keys(peers).length;
+
+  // Sanitize message content to prevent XSS
+  const sanitizeMessage = (text) => {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  };
+
+  // Handle new messages from the server
+  useEffect(() => {
+    let isSubscribed = true;
+
+    const subscription = room.collection('chat_message').subscribe((messages) => {
+      if (isSubscribed) {
+        setMessages(messages.sort((a, b) => 
+          new Date(a.created_at) - new Date(b.created_at)
+        ));
+      }
+    });
+
+    return () => {
+      isSubscribed = false;
+      subscription();
+    };
+  }, [room]);
+
+  // Auto scroll to bottom on new messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Handle typing indicators
+  useEffect(() => {
+    const handler = (event) => {
+      if (event.data.type === 'typing_start') {
+        setTypingUsers(prev => new Set([...prev, event.data.username]));
+      } else if (event.data.type === 'typing_end') {
+        setTypingUsers(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(event.data.username);
+          return newSet;
+        });
+      }
+    };
+
+    room.onmessage = handler;
+    return () => {
+      room.onmessage = null;
+    };
+  }, [room]);
+
+  // Typing indicator debounce
+  const debouncedTyping = useRef(null);
+  const sendTypingIndicator = (isTyping) => {
+    room.send({
+      type: isTyping ? 'typing_start' : 'typing_end',
+      echo: false,
+    });
+  };
+
+  const handleInputChange = (e) => {
+    setNewMessage(e.target.value);
+    
+    if (debouncedTyping.current) {
+      clearTimeout(debouncedTyping.current);
+    }
+
+    sendTypingIndicator(true);
+    debouncedTyping.current = setTimeout(() => {
+      sendTypingIndicator(false);
+    }, 1000);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    const trimmedMessage = newMessage.trim();
+    if (!trimmedMessage) return;
+
+    try {
+      // Create sanitized message record
+      await room.collection('chat_message').create({
+        content: sanitizeMessage(trimmedMessage),
+      });
+      
+      setNewMessage('');
+      sendTypingIndicator(false);
+      if (debouncedTyping.current) {
+        clearTimeout(debouncedTyping.current);
+      }
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
+  return (
+    <div className={`chat-container ${isMinimized ? 'minimized' : ''}`}>
+      <div className="chat-header" onClick={() => setIsMinimized(!isMinimized)}>
+        <div className="chat-header-title">
+          💬 Chat
+          <span className="online-count">({openCount} online)</span>
+        </div>
+        <span>{isMinimized ? '▲' : '▼'}</span>
+      </div>
+      <div className="chat-messages">
+        {messages.map(msg => (
+          <div 
+            key={msg.id} 
+            className={`chat-message ${msg.username === room.party.client.username ? 'own' : ''}`}
+          >
+            <img 
+              className="chat-message-avatar"
+              src={`https://images.websim.ai/avatar/${msg.username}`}
+              alt={msg.username}
             />
-            <button type="submit" disabled={isSubmitting || !prompt.trim()}>
-              {isSubmitting ? 'Creating...' : 'Create'}
-            </button>
+            <div className="chat-message-content">
+              <div style={{ color: '#666', fontSize: '12px', marginBottom: '4px' }}>
+                {msg.username}
+              </div>
+              {msg.content}
+            </div>
           </div>
-        </form>
-        {error && <div className="error">{error}</div>}
-      </div>
-
-      <div className="gallery">
-        {paginatedArtifacts.map(artifact => (
-          <PhysicsContainer key={artifact.id} artifact={artifact} />
         ))}
+        {typingUsers.size > 0 && (
+          <div className="typing-indicator">
+            {Array.from(typingUsers).join(', ')} {typingUsers.size === 1 ? 'is' : 'are'} typing...
+          </div>
+        )}
+        <div ref={messagesEndRef} />
       </div>
-
-      {totalPages > 1 && (
-        <Pagination 
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={handlePageChange}
+      <form onSubmit={handleSubmit} className="chat-input-container">
+        <textarea
+          className="chat-input"
+          value={newMessage}
+          onChange={handleInputChange}
+          onKeyPress={handleKeyPress}
+          placeholder="Type a message..."
         />
-      )}
+        <button 
+          type="submit" 
+          className="chat-send" 
+          disabled={!newMessage.trim()}
+        >
+          ➤
+        </button>
+      </form>
     </div>
   );
 }
