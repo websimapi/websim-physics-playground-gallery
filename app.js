@@ -64,6 +64,55 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
             warn: (...args) => console.warn(`[Physics ${artifact.id} Fullscreen]:`, ...args),
           },
           Math: Object.create(Math),
+          THREE: window.THREE,
+          initThreeScene: () => {
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(
+              75,
+              wrapper.clientWidth / wrapper.clientHeight,
+              0.1,
+              1000
+            );
+            
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
+            wrapper.appendChild(renderer.domElement);
+            
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            
+            // Add directional light
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+            
+            // Handle resize
+            const handleResize = () => {
+              camera.aspect = wrapper.clientWidth / wrapper.clientHeight;
+              camera.updateProjectionMatrix();
+              renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
+            };
+            
+            window.addEventListener('resize', handleResize);
+            
+            return {
+              scene,
+              camera,
+              renderer,
+              controls,
+              dispose: () => {
+                window.removeEventListener('resize', handleResize);
+                renderer.dispose();
+                wrapper.removeChild(renderer.domElement);
+              }
+            };
+          },
+          loaders: {
+            GLTFLoader: THREE.GLTFLoader,
+          }
         };
 
         const animations = new Set();
@@ -430,6 +479,55 @@ function PhysicsContainer({ artifact }) {
             warn: (...args) => console.warn(`[Physics ${artifact.id}]:`, ...args),
           },
           Math: Object.create(Math),
+          THREE: window.THREE,
+          initThreeScene: () => {
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(
+              75,
+              wrapper.clientWidth / wrapper.clientHeight,
+              0.1,
+              1000
+            );
+            
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
+            wrapper.appendChild(renderer.domElement);
+            
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            
+            // Add directional light
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+            
+            // Handle resize
+            const handleResize = () => {
+              camera.aspect = wrapper.clientWidth / wrapper.clientHeight;
+              camera.updateProjectionMatrix();
+              renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
+            };
+            
+            window.addEventListener('resize', handleResize);
+            
+            return {
+              scene,
+              camera,
+              renderer,
+              controls,
+              dispose: () => {
+                window.removeEventListener('resize', handleResize);
+                renderer.dispose();
+                wrapper.removeChild(renderer.domElement);
+              }
+            };
+          },
+          loaders: {
+            GLTFLoader: THREE.GLTFLoader,
+          }
         };
 
         const animations = new Set();
@@ -499,9 +597,6 @@ function PhysicsContainer({ artifact }) {
             }
           }
         `;
-        
-        const scriptElement = document.createElement('script');
-        scriptElement.textContent = code;
         
         (new Function('sandbox', code))(sandboxEnvironment);
 
@@ -650,6 +745,11 @@ function PhysicsPlayground() {
         },
         body: JSON.stringify({
           prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
+          You have access to Three.js for 3D graphics and physics simulations. The Three.js library and its common addons (OrbitControls, GLTFLoader) are already loaded.
+          
+          You can initialize a Three.js scene using the provided initThreeScene() helper:
+          const { scene, camera, renderer, controls, dispose } = initThreeScene();
+          
           The response must be valid JSON matching this interface:
 
           interface PhysicsArtifact {
@@ -660,15 +760,29 @@ function PhysicsPlayground() {
             description: string; // A longer description explaining the physics concept
           }
 
+          Example Three.js usage:
           {
-            "html": "<div class='container'><svg width='300' height='200'>...</svg></div>",
-            "css": ".container { ... }",
-            "js": "const svg = document.querySelector('svg'); ...",
-            "title": "Simple Pendulum Simulation",
-            "description": "This demonstration shows a pendulum swinging under the influence of gravity..."
+            "html": "<div class='scene-container'></div>",
+            "css": ".scene-container { width: 100%; height: 100%; }",
+            "js": "const { scene, camera, renderer, controls } = initThreeScene();
+                  camera.position.z = 5;
+                  const geometry = new THREE.BoxGeometry();
+                  const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
+                  const cube = new THREE.Mesh(geometry, material);
+                  scene.add(cube);
+                  
+                  function animate() {
+                    requestAnimationFrame(animate);
+                    cube.rotation.x += 0.01;
+                    cube.rotation.y += 0.01;
+                    renderer.render(scene, camera);
+                  }
+                  animate();",
+            "title": "Rotating 3D Cube",
+            "description": "A simple demonstration of 3D graphics using Three.js"
           }
 
-          The code should be self-contained and use SVG for graphics where possible.
+          The code should leverage Three.js for 3D graphics and physics where appropriate.
           Ensure all code is properly escaped for JSON.
           
           Create a physics demonstration for: ${prompt}`,
