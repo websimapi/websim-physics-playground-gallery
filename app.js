@@ -28,6 +28,7 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
         }
 
         const wrapper = document.createElement('div');
+        wrapper.className = 'physics-wrapper';
         wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
         shadow.appendChild(wrapper);
 
@@ -40,9 +41,18 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
             width: 100%;
             height: 100%;
             contain: content;
+            background: #f8f9fa;
+            border-radius: 8px;
+            overflow: hidden;
+          }
+          .physics-wrapper {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
           }
           ${artifact.code.css || ''}
-          
           /* Only apply special centering for Three.js canvases */
           canvas[data-engine="three.js"] {
             display: block;
@@ -51,19 +61,24 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
         `;
         shadow.appendChild(styleElement);
 
-        wrapper.innerHTML = artifact.code.html || '';
+        // Create container for user HTML
+        const userContent = document.createElement('div');
+        userContent.className = 'user-content';
+        userContent.style.cssText = 'width: 100%; height: 100%;';
+        userContent.innerHTML = artifact.code.html || '';
+        wrapper.appendChild(userContent);
 
         const sandboxEnvironment = {
-          rootElement: wrapper,
+          rootElement: userContent,
           document: {
-            getElementById: (id) => wrapper.querySelector('#' + id),
-            querySelector: (sel) => wrapper.querySelector(sel),
-            querySelectorAll: (sel) => wrapper.querySelectorAll(sel),
+            getElementById: (id) => userContent.querySelector('#' + id),
+            querySelector: (sel) => userContent.querySelector(sel),
+            querySelectorAll: (sel) => userContent.querySelectorAll(sel),
             createElement: (tag) => document.createElement(tag),
           },
           window: {
-            innerWidth: wrapper.clientWidth,
-            innerHeight: wrapper.clientHeight,
+            innerWidth: userContent.clientWidth,
+            innerHeight: userContent.clientHeight,
           },
           console: {
             log: (...args) => console.log(`[Physics ${artifact.id} Fullscreen]:`, ...args),
@@ -473,6 +488,7 @@ function PhysicsContainer({ artifact }) {
         }
 
         const wrapper = document.createElement('div');
+        wrapper.className = 'physics-wrapper';
         wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
         shadow.appendChild(wrapper);
 
@@ -489,8 +505,14 @@ function PhysicsContainer({ artifact }) {
             border-radius: 8px;
             overflow: hidden;
           }
+          .physics-wrapper {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
           ${artifact.code.css || ''}
-          
           /* Only apply special centering for Three.js canvases */
           canvas[data-engine="three.js"] {
             display: block;
@@ -499,19 +521,24 @@ function PhysicsContainer({ artifact }) {
         `;
         shadow.appendChild(styleElement);
 
-        wrapper.innerHTML = artifact.code.html || '';
+        // Create container for user HTML
+        const userContent = document.createElement('div');
+        userContent.className = 'user-content';
+        userContent.style.cssText = 'width: 100%; height: 100%;';
+        userContent.innerHTML = artifact.code.html || '';
+        wrapper.appendChild(userContent);
 
         const sandboxEnvironment = {
-          rootElement: wrapper,
+          rootElement: userContent,
           document: {
-            getElementById: (id) => wrapper.querySelector('#' + id),
-            querySelector: (sel) => wrapper.querySelector(sel),
-            querySelectorAll: (sel) => wrapper.querySelectorAll(sel),
+            getElementById: (id) => userContent.querySelector('#' + id),
+            querySelector: (sel) => userContent.querySelector(sel),
+            querySelectorAll: (sel) => userContent.querySelectorAll(sel),
             createElement: (tag) => document.createElement(tag),
           },
           window: {
-            innerWidth: wrapper.clientWidth,
-            innerHeight: wrapper.clientHeight,
+            innerWidth: userContent.clientWidth,
+            innerHeight: userContent.clientHeight,
           },
           console: {
             log: (...args) => console.log(`[Physics ${artifact.id}]:`, ...args),
