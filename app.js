@@ -89,7 +89,7 @@ function PhysicsContainer({ artifact }) {
   const containerRef = React.useRef();
   const room = new WebsimSocket();
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 
   const handleDelete = async () => {
     if (!window.confirm('Are you sure you want to delete this physics artifact?')) return;
@@ -107,6 +107,18 @@ function PhysicsContainer({ artifact }) {
 
   // Check if the current user is the creator of this artifact
   const isOwner = artifact.username === room.party.client.username;
+
+  // Format the date in a more readable way
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('default', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date);
+  };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -132,20 +144,6 @@ function PhysicsContainer({ artifact }) {
     };
   }, [artifact]);
 
-  const toggleDetails = () => {
-    setIsExpanded(!isExpanded);
-  };
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
   return (
     <div className="physics-container" ref={containerRef}>
       {isOwner && (
@@ -159,10 +157,7 @@ function PhysicsContainer({ artifact }) {
         </button>
       )}
       <div className="physics-content"></div>
-      <div 
-        className={`physics-meta ${isExpanded ? 'expanded' : ''}`}
-        onClick={toggleDetails}
-      >
+      <div className="physics-meta">
         <img 
           className="avatar"
           src={`https://images.websim.ai/avatar/${artifact.username}`}
@@ -171,33 +166,34 @@ function PhysicsContainer({ artifact }) {
         <span>{artifact.username}</span>
         <span>•</span>
         <span>{new Date(artifact.created_at).toLocaleDateString()}</span>
+        <button 
+          className="details-toggle" 
+          onClick={() => setIsDetailsOpen(!isDetailsOpen)}
+        >
+          Details
+          <span className={`chevron ${isDetailsOpen ? 'open' : ''}`}>▼</span>
+        </button>
       </div>
-      <div className={`details-panel ${isExpanded ? 'expanded' : ''}`}>
-        <div className="details-content">
-          <div className="details-row">
-            <div className="details-label">Title</div>
-            <div className="details-value">{artifact.title}</div>
-          </div>
-          <div className="details-row">
-            <div className="details-label">Description</div>
-            <div className="details-value">{artifact.description}</div>
-          </div>
-          <div className="details-row">
-            <div className="details-label">Original Prompt</div>
-            <div className="details-value">{artifact.prompt}</div>
-          </div>
-          <div className="details-row">
-            <div className="details-label">Created At</div>
-            <div className="details-value">{formatDate(artifact.created_at)}</div>
-          </div>
-          <div className="details-row">
-            <div className="details-label">Source Code</div>
-            <div className="details-value">
-              <pre>HTML:{'\n'}{artifact.code.html}</pre>
-              <pre>CSS:{'\n'}{artifact.code.css}</pre>
-              <pre>JavaScript:{'\n'}{artifact.code.js}</pre>
-            </div>
-          </div>
+      <div className={`details-dropdown ${isDetailsOpen ? 'open' : 'closed'}`}>
+        <div className="details-section">
+          <div className="details-label">Title</div>
+          <div className="details-value">{artifact.code.title}</div>
+        </div>
+        <div className="details-section">
+          <div className="details-label">Description</div>
+          <div className="details-value">{artifact.code.description}</div>
+        </div>
+        <div className="details-section">
+          <div className="details-label">Original Prompt</div>
+          <div className="details-value">{artifact.prompt}</div>
+        </div>
+        <div className="details-section">
+          <div className="details-label">Created</div>
+          <div className="details-value">{formatDate(artifact.created_at)}</div>
+        </div>
+        <div className="details-section">
+          <div className="details-label">Created By</div>
+          <div className="details-value">{artifact.username}</div>
         </div>
       </div>
     </div>
