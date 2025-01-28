@@ -67,6 +67,7 @@ button:disabled {
   height: fit-content;
   display: flex;
   flex-direction: column;
+  min-height: 450px;
 }
 
 .physics-content {
@@ -245,6 +246,99 @@ button:disabled {
 
 .chevron.open {
   transform: rotate(180deg);
+}
+
+.fullscreen-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #f0f2f5;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+}
+
+.fullscreen-content {
+  flex: 1;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.fullscreen-header {
+  display: flex;
+  align-items: center;
+  padding: 15px 20px;
+  background: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.fullscreen-title {
+  flex: 1;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.back-button {
+  padding: 8px 16px;
+  background: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.back-button:hover {
+  background: #1557b0;
+}
+
+.back-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.fullscreen-physics-content {
+  flex: 1;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  margin: 20px 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.expand-button {
+  position: absolute;
+  top: 10px;
+  right: 44px;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.2s;
+}
+
+.expand-button:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.expand-icon {
+  width: 14px;
+  height: 14px;
 }
 
 @media (max-width: 768px) {

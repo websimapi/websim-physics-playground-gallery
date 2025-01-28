@@ -1,9 +1,11 @@
-const { useState, useEffect, useSyncExternalStore } = React;
+import React, { useState, useEffect, useSyncExternalStore } from 'react';
+import ReactDOM from 'react-dom';
 
 function PhysicsPlayground() {
   const [prompt, setPrompt] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [fullscreenArtifact, setFullscreenArtifact] = useState(null);
   const room = new WebsimSocket();
   
   // Get physics artifacts from the database
@@ -83,6 +85,15 @@ function PhysicsPlayground() {
     }
   };
 
+  if (fullscreenArtifact) {
+    return (
+      <FullscreenView
+        artifact={fullscreenArtifact}
+        onClose={() => setFullscreenArtifact(null)}
+      />
+    );
+  }
+
   return (
     <div className="container">
       <div className="input-section">
@@ -105,40 +116,41 @@ function PhysicsPlayground() {
 
       <div className="gallery">
         {artifacts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(artifact => (
-          <PhysicsContainer key={artifact.id} artifact={artifact} />
+          <PhysicsContainer 
+            key={artifact.id} 
+            artifact={artifact}
+            onExpand={() => setFullscreenArtifact(artifact)}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function PhysicsContainer({ artifact }) {
+function FullscreenView({ artifact, onClose }) {
+  return (
+    <div className="fullscreen-overlay">
+      <div className="fullscreen-header">
+        <h2 className="fullscreen-title">{artifact.code.title}</h2>
+        <button className="back-button" onClick={onClose}>
+          <svg className="back-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+          </svg>
+          Back
+        </button>
+      </div>
+      <div className="fullscreen-content">
+        <div className="fullscreen-physics-content">
+          <PhysicsContent artifact={artifact} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PhysicsContent({ artifact }) {
   const containerRef = React.useRef();
-  const room = new WebsimSocket();
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [mountError, setMountError] = useState(null);
-  
-  // Add explicit event handler for delete
-  const handleDelete = async (e) => {
-    e.preventDefault();  // Prevent event bubbling
-    e.stopPropagation(); // Ensure the event doesn't propagate
-    
-    if (isDeleting) return; // Prevent double clicks
-    
-    if (!window.confirm('Are you sure you want to delete this physics artifact?')) {
-      return;
-    }
-    
-    setIsDeleting(true);
-    try {
-      await room.collection('physics_artifact').delete(artifact.id);
-    } catch (error) {
-      console.error('Failed to delete artifact:', error);
-      alert('Failed to delete artifact. Please try again.');
-      setIsDeleting(false);
-    }
-  };
 
   useEffect(() => {
     let mounted = true;
@@ -150,9 +162,9 @@ function PhysicsContainer({ artifact }) {
         if (!containerRef.current || !mounted) return;
         
         // Get the physics content container
-        const sandbox = containerRef.current.querySelector('.physics-content');
+        const sandbox = containerRef.current;
         if (!sandbox) {
-          throw new Error('Could not find physics content container');
+          throw new Error('Container not found');
         }
 
         // Clear any existing content and shadow root
@@ -206,65 +218,6 @@ function PhysicsContainer({ artifact }) {
           Math: Object.create(Math),
         };
 
-        // Animation and timing management
-        const animations = new Set();
-        const timers = new Set();
-        const intervals = new Set();
-
-        sandboxEnvironment.requestAnimationFrame = (cb) => {
-          const id = window.requestAnimationFrame((timestamp) => {
-            if (!animations.has(id) || !mounted) return;
-            animations.delete(id);
-            try {
-              cb(timestamp);
-            } catch (e) {
-              console.error(`[Physics ${artifact.id}] Animation error:`, e);
-            }
-          });
-          animations.add(id);
-          return id;
-        };
-
-        sandboxEnvironment.setTimeout = (cb, delay) => {
-          const id = window.setTimeout(() => {
-            if (!timers.has(id) || !mounted) return;
-            timers.delete(id);
-            try {
-              cb();
-            } catch (e) {
-              console.error(`[Physics ${artifact.id}] Timeout error:`, e);
-            }
-          }, delay);
-          timers.add(id);
-          return id;
-        };
-
-        sandboxEnvironment.setInterval = (cb, delay) => {
-          const id = window.setInterval(() => {
-            if (!intervals.has(id) || !mounted) return;
-            try {
-              cb();
-            } catch (e) {
-              console.error(`[Physics ${artifact.id}] Interval error:`, e);
-            }
-          }, delay);
-          intervals.add(id);
-          return id;
-        };
-
-        cleanup = () => {
-          mounted = false;
-          animations.forEach(id => window.cancelAnimationFrame(id));
-          timers.forEach(id => window.clearTimeout(id));
-          intervals.forEach(id => window.clearInterval(id));
-          animations.clear();
-          timers.clear();
-          intervals.clear();
-          if (shadow) {
-            shadow.innerHTML = '';
-          }
-        };
-
         // Execute the physics code in the sandbox
         const code = `
           with (sandbox) {
@@ -276,10 +229,6 @@ function PhysicsContainer({ artifact }) {
           }
         `;
 
-        const scriptElement = document.createElement('script');
-        scriptElement.textContent = code;
-        
-        // Execute the code with the sandbox environment
         (new Function('sandbox', code))(sandboxEnvironment);
 
       } catch (error) {
@@ -297,27 +246,64 @@ function PhysicsContainer({ artifact }) {
     };
   }, [artifact.id, artifact.code]);
 
+  return (
+    <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
+      {mountError && (
+        <div className="error">
+          Failed to load physics simulation: {mountError}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PhysicsContainer({ artifact, onExpand }) {
+  const room = new WebsimSocket();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+
+  const handleDelete = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (isDeleting) return;
+    
+    if (!window.confirm('Are you sure you want to delete this physics artifact?')) {
+      return;
+    }
+    
+    setIsDeleting(true);
+    try {
+      await room.collection('physics_artifact').delete(artifact.id);
+    } catch (error) {
+      console.error('Failed to delete artifact:', error);
+      alert('Failed to delete artifact. Please try again.');
+      setIsDeleting(false);
+    }
+  };
+
   const isOwner = artifact.username === room.party.client.username;
 
   return (
-    <div className="physics-container" ref={containerRef}>
+    <div className="physics-container">
       {isOwner && (
         <button 
           className="delete-button" 
           onClick={handleDelete}
           disabled={isDeleting}
           title="Delete this artifact"
-          type="button"
         >
           ×
         </button>
       )}
+      <button className="expand-button" onClick={onExpand}>
+        <svg className="expand-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+        </svg>
+        Expand
+      </button>
       <div className="physics-content">
-        {mountError && (
-          <div className="error">
-            Failed to load physics simulation: {mountError}
-          </div>
-        )}
+        <PhysicsContent artifact={artifact} />
       </div>
       <div className="physics-meta">
         <img 
