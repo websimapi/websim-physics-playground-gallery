@@ -6,6 +6,11 @@ function FullscreenModal({ isOpen, onClose, artifact, onUpdateZoom }) {
   const [zoom, setZoom] = useState(artifact.code.zoom || 1);
   const [is3D, setIs3D] = useState(false);
 
+  useEffect(() => {
+    const is3DScene = artifact.code.js.includes('initThreeScene');
+    setIs3D(is3DScene);
+  }, [artifact.code.js]);
+
   const handleZoomChange = async (newZoom) => {
     setZoom(newZoom);
     if (onUpdateZoom) {
@@ -244,10 +249,6 @@ function FullscreenModal({ isOpen, onClose, artifact, onUpdateZoom }) {
       resizeObserver.disconnect();
     };
   }, [isOpen, artifact, zoom]);
-
-  // Check if this is a 3D scene by looking for Three.js initialization
-  const is3DScene = artifact.code.js.includes('initThreeScene');
-  setIs3D(is3DScene);
 
   if (!isOpen) return null;
 
@@ -937,7 +938,7 @@ function PhysicsPlayground() {
           Create a physics demonstration for: ${prompt}`,
           data: prompt
         }),
-      });
+      );
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
