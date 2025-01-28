@@ -77,6 +77,69 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+
+.physics-meta:hover {
+  background: #eceef0;
+}
+
+.physics-meta::after {
+  content: '▼';
+  margin-left: auto;
+  font-size: 12px;
+  transition: transform 0.3s ease;
+}
+
+.physics-meta.expanded::after {
+  transform: rotate(180deg);
+}
+
+.details-panel {
+  background: #f8f9fa;
+  border-top: 1px solid #eee;
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.3s ease-out;
+}
+
+.details-panel.expanded {
+  max-height: 500px;
+  transition: max-height 0.5s ease-in;
+}
+
+.details-content {
+  padding: 15px 20px;
+}
+
+.details-row {
+  margin-bottom: 12px;
+}
+
+.details-label {
+  font-weight: 500;
+  color: #666;
+  font-size: 0.9em;
+  margin-bottom: 4px;
+}
+
+.details-value {
+  color: #333;
+  font-size: 0.95em;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.details-value pre {
+  background: #fff;
+  padding: 10px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.9em;
+  border: 1px solid #eee;
+  margin: 5px 0;
 }
 
 .avatar {
