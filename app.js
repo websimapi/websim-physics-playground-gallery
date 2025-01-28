@@ -1,5 +1,262 @@
 const { useState, useEffect, useSyncExternalStore } = React;
 
+function initializePhysics(containerRef, artifact, mounted, setMountError) {
+  try {
+    if (!containerRef.current || !mounted) return;
+    
+    const sandbox = containerRef.current.querySelector('.physics-content');
+    if (!sandbox) {
+      throw new Error('Could not find physics content container');
+    }
+
+    let shadow = null;
+    if (sandbox.shadowRoot) {
+      sandbox.shadowRoot.innerHTML = '';
+    } else {
+      shadow = sandbox.attachShadow({ mode: 'open' });
+    }
+
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
+    shadow.appendChild(wrapper);
+
+    const styleElement = document.createElement('style');
+    styleElement.textContent = `
+      :host {
+        all: initial;
+        display: block;
+        position: relative;
+        width: 100%;
+        height: 100%;
+        contain: content;
+      }
+      ${artifact.code.css || ''}
+      
+      /* Only apply special centering for Three.js canvases */
+      canvas[data-engine="three.js"] {
+        display: block;
+        margin: 0 auto;
+      }
+    `;
+    shadow.appendChild(styleElement);
+
+    wrapper.innerHTML = artifact.code.html || '';
+
+    const eventListeners = new Set();
+    const sandboxWindow = {
+      innerWidth: wrapper.clientWidth,
+      innerHeight: wrapper.clientHeight,
+      addEventListener: (event, handler, options) => {
+        const wrappedHandler = (...args) => {
+          if (mounted) handler(...args);
+        };
+        eventListeners.add([event, wrappedHandler, options]);
+        window.addEventListener(event, wrappedHandler, options);
+      },
+      removeEventListener: (event, handler, options) => {
+        window.removeEventListener(event, handler, options);
+      },
+      requestAnimationFrame: (cb) => window.requestAnimationFrame(cb),
+      devicePixelRatio: window.devicePixelRatio,
+      dispatchEvent: (event) => window.dispatchEvent(event),
+    };
+
+    const sandboxEnvironment = {
+      rootElement: wrapper,
+      document: {
+        getElementById: (id) => wrapper.querySelector('#' + id),
+        querySelector: (sel) => wrapper.querySelector(sel),
+        querySelectorAll: (sel) => wrapper.querySelectorAll(sel),
+        createElement: (tag) => document.createElement(tag),
+        createElementNS: (ns, tag) => document.createElementNS(ns, tag),
+      },
+      window: sandboxWindow,
+      console: {
+        log: (...args) => console.log(`[Physics ${artifact.id}]:`, ...args),
+        error: (...args) => console.error(`[Physics ${artifact.id}]:`, ...args),
+        warn: (...args) => console.warn(`[Physics ${artifact.id}]:`, ...args),
+      },
+      Math: Object.create(Math),
+      THREE: window.THREE,
+      CANNON: window.CANNON,
+      initThreeScene: () => {
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf8f9fa);
+        
+        let container = wrapper.querySelector('.scene-container');
+        if (!container) {
+          container = document.createElement('div');
+          container.className = 'scene-container';
+          wrapper.appendChild(container);
+        }
+        
+        const aspectRatio = container.clientWidth / container.clientHeight;
+        const camera = new THREE.PerspectiveCamera(
+          60,
+          aspectRatio,
+          0.1,
+          1000
+        );
+        camera.position.set(4, 4, 4);
+        camera.lookAt(0, 0, 0);
+        
+        const renderer = new THREE.WebGLRenderer({ 
+          antialias: true,
+          alpha: true,
+          preserveDrawingBuffer: true
+        });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        
+        if (container) {
+          container.appendChild(renderer.domElement);
+          renderer.domElement.setAttribute('data-engine', 'three.js');
+        }
+        
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+        
+        const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        mainLight.position.set(5, 5, 5);
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.width = 1024;
+        mainLight.shadow.mapSize.height = 1024;
+        scene.add(mainLight);
+        
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+        fillLight.position.set(-5, 0, -5);
+        scene.add(fillLight);
+        
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.screenSpacePanning = true;
+        controls.enableZoom = true;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 1;
+        
+        const gridHelper = new THREE.GridHelper(10, 10, 0xcccccc, 0xeeeeee);
+        gridHelper.material.opacity = 0.2;
+        gridHelper.material.transparent = true;
+        scene.add(gridHelper);
+        
+        const handleResize = () => {
+          if (!container || !mounted) return;
+          const width = container.clientWidth;
+          const height = container.clientHeight;
+          const aspect = width / height;
+          
+          camera.aspect = aspect;
+          camera.updateProjectionMatrix();
+          renderer.setSize(width, height, false);
+        };
+        
+        sandboxWindow.addEventListener('resize', handleResize);
+        
+        function animate() {
+          if (!mounted) return;
+          requestAnimationFrame(animate);
+          controls.update();
+          renderer.render(scene, camera);
+        }
+        animate();
+        
+        return {
+          scene,
+          camera,
+          renderer,
+          controls,
+          dispose: () => {
+            sandboxWindow.removeEventListener('resize', handleResize);
+            controls.dispose();
+            renderer.dispose();
+            if (renderer.domElement && renderer.domElement.parentNode) {
+              renderer.domElement.parentNode.removeChild(renderer.domElement);
+            }
+          }
+        };
+      },
+    };
+
+    const animations = new Set();
+    const timers = new Set();
+    const intervals = new Set();
+
+    sandboxEnvironment.requestAnimationFrame = (cb) => {
+      const id = window.requestAnimationFrame((timestamp) => {
+        if (!animations.has(id) || !mounted) return;
+        animations.delete(id);
+        try {
+          cb(timestamp);
+        } catch (e) {
+          console.error(`[Physics ${artifact.id}] Animation error:`, e);
+        }
+      });
+      animations.add(id);
+      return id;
+    };
+
+    sandboxEnvironment.setTimeout = (cb, delay) => {
+      const id = window.setTimeout(() => {
+        if (!timers.has(id) || !mounted) return;
+        timers.delete(id);
+        try {
+          cb();
+        } catch (e) {
+          console.error(`[Physics ${artifact.id}] Timeout error:`, e);
+        }
+      }, delay);
+      timers.add(id);
+      return id;
+    };
+
+    sandboxEnvironment.setInterval = (cb, delay) => {
+      const id = window.setInterval(() => {
+        if (!intervals.has(id) || !mounted) return;
+        try {
+          cb();
+        } catch (e) {
+          console.error(`[Physics ${artifact.id}] Interval error:`, e);
+        }
+      }, delay);
+      intervals.add(id);
+      return id;
+    };
+
+    const code = `
+      with (sandbox) {
+        try {
+          ${artifact.code.js || ''}
+        } catch (error) {
+          console.error('[Physics ${artifact.id}] Runtime error:', error);
+        }
+      }
+    `;
+    
+    (new Function('sandbox', code))(sandboxEnvironment);
+
+    return () => {
+      mounted = false;
+      animations.forEach(id => window.cancelAnimationFrame(id));
+      timers.forEach(id => window.clearTimeout(id));
+      intervals.forEach(id => window.clearInterval(id));
+      eventListeners.forEach(([event, handler, options]) => {
+        window.removeEventListener(event, handler, options);
+      });
+      if (shadow) {
+        shadow.innerHTML = '';
+      }
+    };
+
+  } catch (error) {
+    console.error(`[Physics ${artifact.id}] Initialization error:`, error);
+    setMountError(error.message);
+    return () => {};
+  }
+}
+
 function FullscreenModal({ isOpen, onClose, artifact }) {
   const containerRef = React.useRef();
   const [mountError, setMountError] = useState(null);
@@ -8,279 +265,10 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
     if (!isOpen) return;
     
     let mounted = true;
-    let shadow = null;
-    let cleanup = () => {};
-    let sceneCleanup = null;
-
-    const initializePhysics = () => {
-      try {
-        if (!containerRef.current || !mounted) return;
-        
-        const sandbox = containerRef.current.querySelector('.physics-content');
-        if (!sandbox) {
-          throw new Error('Could not find physics content container');
-        }
-
-        if (sandbox.shadowRoot) {
-          sandbox.shadowRoot.innerHTML = '';
-        } else {
-          shadow = sandbox.attachShadow({ mode: 'open' });
-        }
-
-        const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
-        shadow.appendChild(wrapper);
-
-        const styleElement = document.createElement('style');
-        styleElement.textContent = `
-          :host {
-            all: initial;
-            display: block;
-            position: relative;
-            width: 100%;
-            height: 100%;
-            contain: content;
-          }
-          ${artifact.code.css || ''}
-          
-          /* Only apply special centering for Three.js canvases */
-          canvas[data-engine="three.js"] {
-            display: block;
-            margin: 0 auto;
-          }
-        `;
-        shadow.appendChild(styleElement);
-
-        wrapper.innerHTML = artifact.code.html || '';
-
-        const sandboxEnvironment = {
-          rootElement: wrapper,
-          document: {
-            getElementById: (id) => wrapper.querySelector('#' + id),
-            querySelector: (sel) => wrapper.querySelector(sel),
-            querySelectorAll: (sel) => wrapper.querySelectorAll(sel),
-            createElement: (tag) => document.createElement(tag),
-          },
-          window: {
-            innerWidth: wrapper.clientWidth,
-            innerHeight: wrapper.clientHeight,
-          },
-          console: {
-            log: (...args) => console.log(`[Physics ${artifact.id} Fullscreen]:`, ...args),
-            error: (...args) => console.error(`[Physics ${artifact.id} Fullscreen]:`, ...args),
-            warn: (...args) => console.warn(`[Physics ${artifact.id} Fullscreen]:`, ...args),
-          },
-          Math: Object.create(Math),
-          THREE: window.THREE,
-          CANNON: window.CANNON,
-          initThreeScene: () => {
-            const scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xf8f9fa);
-            
-            // Find or create container
-            let container = wrapper.querySelector('.scene-container');
-            if (!container) {
-              container = document.createElement('div');
-              container.className = 'scene-container';
-              wrapper.appendChild(container);
-            }
-            
-            // Create camera with better default position for preview
-            const aspectRatio = container.clientWidth / container.clientHeight;
-            const camera = new THREE.PerspectiveCamera(
-              60, // Wider FOV for better preview
-              aspectRatio,
-              0.1,
-              1000
-            );
-            camera.position.set(4, 4, 4); // Position camera at angle for better preview
-            camera.lookAt(0, 0, 0);
-            
-            const renderer = new THREE.WebGLRenderer({ 
-              antialias: true,
-              alpha: true,
-              preserveDrawingBuffer: true
-            });
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(container.clientWidth, container.clientHeight);
-            renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            
-            // Only append if container exists and renderer not already appended
-            if (container && !container.querySelector('canvas')) {
-              container.appendChild(renderer.domElement);
-            }
-            
-            // Add better lighting setup
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-            scene.add(ambientLight);
-            
-            const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            mainLight.position.set(5, 5, 5);
-            mainLight.castShadow = true;
-            mainLight.shadow.mapSize.width = 1024;
-            mainLight.shadow.mapSize.height = 1024;
-            scene.add(mainLight);
-            
-            const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
-            fillLight.position.set(-5, 0, -5);
-            scene.add(fillLight);
-            
-            const controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.screenSpacePanning = true;
-            controls.enableZoom = true;
-            controls.autoRotate = true;
-            controls.autoRotateSpeed = 1;
-            
-            // Add a subtle grid for better spatial reference
-            const gridHelper = new THREE.GridHelper(10, 10, 0xcccccc, 0xeeeeee);
-            gridHelper.material.opacity = 0.2;
-            gridHelper.material.transparent = true;
-            scene.add(gridHelper);
-            
-            // Handle resize
-            const handleResize = () => {
-              if (!container) return;
-              const width = container.clientWidth;
-              const height = container.clientHeight;
-              const aspect = width / height;
-              
-              camera.aspect = aspect;
-              camera.updateProjectionMatrix();
-              renderer.setSize(width, height, false);
-            };
-            
-            window.addEventListener('resize', handleResize);
-            
-            // Animation loop with controls update
-            function animate() {
-              if (!mounted) return;
-              requestAnimationFrame(animate);
-              controls.update();
-              renderer.render(scene, camera);
-            }
-            animate();
-            
-            sceneCleanup = () => {
-              window.removeEventListener('resize', handleResize);
-              if (controls) controls.dispose();
-              if (renderer) {
-                renderer.dispose();
-                if (renderer.domElement && renderer.domElement.parentNode) {
-                  renderer.domElement.parentNode.removeChild(renderer.domElement);
-                }
-              }
-            };
-            
-            return {
-              scene,
-              camera,
-              renderer,
-              controls,
-              dispose: sceneCleanup
-            };
-          },
-          loaders: {
-            GLTFLoader: THREE.GLTFLoader,
-          }
-        };
-
-        const animations = new Set();
-        const timers = new Set();
-        const intervals = new Set();
-
-        sandboxEnvironment.requestAnimationFrame = (cb) => {
-          const id = window.requestAnimationFrame((timestamp) => {
-            if (!animations.has(id) || !mounted) return;
-            animations.delete(id);
-            try {
-              cb(timestamp);
-            } catch (e) {
-              console.error(`[Physics ${artifact.id} Fullscreen] Animation error:`, e);
-            }
-          });
-          animations.add(id);
-          return id;
-        };
-
-        sandboxEnvironment.setTimeout = (cb, delay) => {
-          const id = window.setTimeout(() => {
-            if (!timers.has(id) || !mounted) return;
-            timers.delete(id);
-            try {
-              cb();
-            } catch (e) {
-              console.error(`[Physics ${artifact.id} Fullscreen] Timeout error:`, e);
-            }
-          }, delay);
-          timers.add(id);
-          return id;
-        };
-
-        sandboxEnvironment.setInterval = (cb, delay) => {
-          const id = window.setInterval(() => {
-            if (!intervals.has(id) || !mounted) return;
-            try {
-              cb();
-            } catch (e) {
-              console.error(`[Physics ${artifact.id} Fullscreen] Interval error:`, e);
-            }
-          }, delay);
-          intervals.add(id);
-          return id;
-        };
-
-        cleanup = () => {
-          mounted = false;
-          animations.forEach(id => window.cancelAnimationFrame(id));
-          timers.forEach(id => window.clearTimeout(id));
-          intervals.forEach(id => window.clearInterval(id));
-          animations.clear();
-          timers.clear();
-          intervals.clear();
-          if (shadow) {
-            shadow.innerHTML = '';
-          }
-        };
-
-        const code = `
-          with (sandbox) {
-            try {
-              ${artifact.code.js || ''}
-            } catch (error) {
-              console.error('[Physics ${artifact.id} Fullscreen] Runtime error:', error);
-            }
-          }
-        `;
-        
-        (new Function('sandbox', code))(sandboxEnvironment);
-
-      } catch (error) {
-        console.error(`[Physics ${artifact.id} Fullscreen] Initialization error:`, error);
-        setMountError(error.message);
-      }
-    };
-
-    const initTimer = setTimeout(initializePhysics, 100);
-
-    // Add resize observer to handle container size changes
-    const resizeObserver = new ResizeObserver(() => {
-      if (mounted) {
-        cleanup();
-        initializePhysics();
-      }
-    });
+    const cleanup = initializePhysics(containerRef, artifact, mounted, setMountError);
     
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current.querySelector('.physics-content'));
-    }
-
     return () => {
       cleanup();
-      clearTimeout(initTimer);
-      resizeObserver.disconnect();
     };
   }, [isOpen, artifact]);
 
@@ -508,269 +496,10 @@ function PhysicsContainer({ artifact }) {
 
   useEffect(() => {
     let mounted = true;
-    let shadow = null;
-    let cleanup = () => {};
-    let sceneCleanup = null;
-
-    const initializePhysics = () => {
-      try {
-        if (!containerRef.current || !mounted) return;
-        
-        const sandbox = containerRef.current.querySelector('.physics-content');
-        if (!sandbox) {
-          throw new Error('Could not find physics content container');
-        }
-
-        if (sandbox.shadowRoot) {
-          sandbox.shadowRoot.innerHTML = '';
-        } else {
-          shadow = sandbox.attachShadow({ mode: 'open' });
-        }
-
-        const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
-        shadow.appendChild(wrapper);
-
-        const styleElement = document.createElement('style');
-        styleElement.textContent = `
-          :host {
-            all: initial;
-            display: block;
-            position: relative;
-            width: 100%;
-            height: 100%;
-            contain: content;
-            background: #f8f9fa;
-            border-radius: 8px;
-            overflow: hidden;
-          }
-          ${artifact.code.css || ''}
-          
-          /* Only apply special centering for Three.js canvases */
-          canvas[data-engine="three.js"] {
-            display: block;
-            margin: 0 auto;
-          }
-        `;
-        shadow.appendChild(styleElement);
-
-        wrapper.innerHTML = artifact.code.html || '';
-
-        const sandboxEnvironment = {
-          rootElement: wrapper,
-          document: {
-            getElementById: (id) => wrapper.querySelector('#' + id),
-            querySelector: (sel) => wrapper.querySelector(sel),
-            querySelectorAll: (sel) => wrapper.querySelectorAll(sel),
-            createElement: (tag) => document.createElement(tag),
-          },
-          window: {
-            innerWidth: wrapper.clientWidth,
-            innerHeight: wrapper.clientHeight,
-          },
-          console: {
-            log: (...args) => console.log(`[Physics ${artifact.id}]:`, ...args),
-            error: (...args) => console.error(`[Physics ${artifact.id}]:`, ...args),
-            warn: (...args) => console.warn(`[Physics ${artifact.id}]:`, ...args),
-          },
-          Math: Object.create(Math),
-          THREE: window.THREE,
-          CANNON: window.CANNON,
-          initThreeScene: () => {
-            const scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xf8f9fa);
-            
-            // Find or create container
-            let container = wrapper.querySelector('.scene-container');
-            if (!container) {
-              container = document.createElement('div');
-              container.className = 'scene-container';
-              wrapper.appendChild(container);
-            }
-            
-            // Create camera with better default position for preview
-            const aspectRatio = container.clientWidth / container.clientHeight;
-            const camera = new THREE.PerspectiveCamera(
-              60, // Wider FOV for better preview
-              aspectRatio,
-              0.1,
-              1000
-            );
-            camera.position.set(4, 4, 4); // Position camera at angle for better preview
-            camera.lookAt(0, 0, 0);
-            
-            const renderer = new THREE.WebGLRenderer({ 
-              antialias: true,
-              alpha: true,
-              preserveDrawingBuffer: true
-            });
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(container.clientWidth, container.clientHeight);
-            renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            
-            // Only append if container exists and renderer not already appended
-            if (container && !container.querySelector('canvas')) {
-              container.appendChild(renderer.domElement);
-            }
-            
-            // Add better lighting setup
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-            scene.add(ambientLight);
-            
-            const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            mainLight.position.set(5, 5, 5);
-            mainLight.castShadow = true;
-            mainLight.shadow.mapSize.width = 1024;
-            mainLight.shadow.mapSize.height = 1024;
-            scene.add(mainLight);
-            
-            const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
-            fillLight.position.set(-5, 0, -5);
-            scene.add(fillLight);
-            
-            const controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.screenSpacePanning = true;
-            controls.enableZoom = true;
-            controls.autoRotate = true;
-            controls.autoRotateSpeed = 1;
-            
-            // Add a subtle grid for better spatial reference
-            const gridHelper = new THREE.GridHelper(10, 10, 0xcccccc, 0xeeeeee);
-            gridHelper.material.opacity = 0.2;
-            gridHelper.material.transparent = true;
-            scene.add(gridHelper);
-            
-            // Handle resize
-            const handleResize = () => {
-              if (!container) return;
-              const width = container.clientWidth;
-              const height = container.clientHeight;
-              const aspect = width / height;
-              
-              camera.aspect = aspect;
-              camera.updateProjectionMatrix();
-              renderer.setSize(width, height, false);
-            };
-            
-            window.addEventListener('resize', handleResize);
-            
-            // Animation loop with controls update
-            function animate() {
-              if (!mounted) return;
-              requestAnimationFrame(animate);
-              controls.update();
-              renderer.render(scene, camera);
-            }
-            animate();
-            
-            sceneCleanup = () => {
-              window.removeEventListener('resize', handleResize);
-              if (controls) controls.dispose();
-              if (renderer) {
-                renderer.dispose();
-                if (renderer.domElement && renderer.domElement.parentNode) {
-                  renderer.domElement.parentNode.removeChild(renderer.domElement);
-                }
-              }
-            };
-            
-            return {
-              scene,
-              camera,
-              renderer,
-              controls,
-              dispose: sceneCleanup
-            };
-          },
-          loaders: {
-            GLTFLoader: THREE.GLTFLoader,
-          }
-        };
-
-        const animations = new Set();
-        const timers = new Set();
-        const intervals = new Set();
-
-        sandboxEnvironment.requestAnimationFrame = (cb) => {
-          const id = window.requestAnimationFrame((timestamp) => {
-            if (!animations.has(id) || !mounted) return;
-            animations.delete(id);
-            try {
-              cb(timestamp);
-            } catch (e) {
-              console.error(`[Physics ${artifact.id}] Animation error:`, e);
-            }
-          });
-          animations.add(id);
-          return id;
-        };
-
-        sandboxEnvironment.setTimeout = (cb, delay) => {
-          const id = window.setTimeout(() => {
-            if (!timers.has(id) || !mounted) return;
-            timers.delete(id);
-            try {
-              cb();
-            } catch (e) {
-              console.error(`[Physics ${artifact.id}] Timeout error:`, e);
-            }
-          }, delay);
-          timers.add(id);
-          return id;
-        };
-
-        sandboxEnvironment.setInterval = (cb, delay) => {
-          const id = window.setInterval(() => {
-            if (!intervals.has(id) || !mounted) return;
-            try {
-              cb();
-            } catch (e) {
-              console.error(`[Physics ${artifact.id}] Interval error:`, e);
-            }
-          }, delay);
-          intervals.add(id);
-          return id;
-        };
-
-        cleanup = () => {
-          mounted = false;
-          animations.forEach(id => window.cancelAnimationFrame(id));
-          timers.forEach(id => window.clearTimeout(id));
-          intervals.forEach(id => window.clearInterval(id));
-          animations.clear();
-          timers.clear();
-          intervals.clear();
-          if (shadow) {
-            shadow.innerHTML = '';
-          }
-        };
-
-        const code = `
-          with (sandbox) {
-            try {
-              ${artifact.code.js || ''}
-            } catch (error) {
-              console.error('[Physics ${artifact.id}] Runtime error:', error);
-            }
-          }
-        `;
-        
-        (new Function('sandbox', code))(sandboxEnvironment);
-
-      } catch (error) {
-        console.error(`[Physics ${artifact.id}] Initialization error:`, error);
-        setMountError(error.message);
-      }
-    };
-
-    const initTimer = setTimeout(initializePhysics, 100);
+    const cleanup = initializePhysics(containerRef, artifact, mounted, setMountError);
     
     return () => {
       cleanup();
-      clearTimeout(initTimer);
     };
   }, [artifact.id, artifact.code]);
 
@@ -864,16 +593,16 @@ function PhysicsContainer({ artifact }) {
           </div>
         </div>
       </div>
-    <FullscreenModal 
-      isOpen={isFullscreen}
-      onClose={() => setIsFullscreen(false)}
-      artifact={artifact}
-    />
-    <IterateModal
-      isOpen={isIterateModalOpen}
-      onClose={() => setIsIterateModalOpen(false)}
-      artifact={artifact}
-    />
+      <FullscreenModal 
+        isOpen={isFullscreen}
+        onClose={() => setIsFullscreen(false)}
+        artifact={artifact}
+      />
+      <IterateModal
+        isOpen={isIterateModalOpen}
+        onClose={() => setIsIterateModalOpen(false)}
+        artifact={artifact}
+      />
     </>
   );
 }
