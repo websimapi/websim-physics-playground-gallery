@@ -357,7 +357,6 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: white;
 }
 
 .fullscreen-title {
@@ -527,49 +526,6 @@ button:disabled {
 
 .iterate-buttons button.secondary:hover {
   background: #555;
-}
-
-.fullscreen-controls {
-  display: flex;
-  align-items: center;
-  margin: 0 20px;
-}
-
-.zoom-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(0, 0, 0, 0.05);
-  padding: 4px 8px;
-  border-radius: 20px;
-}
-
-.zoom-button {
-  background: white;
-  border: 1px solid #ddd;
-  width: 24px;
-  height: 24px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 16px;
-  padding: 0;
-  color: #666;
-  transition: all 0.2s;
-}
-
-.zoom-button:hover {
-  background: #f0f0f0;
-  color: #333;
-}
-
-.zoom-level {
-  font-size: 14px;
-  color: #666;
-  min-width: 50px;
-  text-align: center;
 }
 
 @media (max-width: 768px) {
