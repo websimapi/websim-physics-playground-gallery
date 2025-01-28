@@ -480,12 +480,10 @@ function PhysicsContainer({ artifact }) {
         styleElement.textContent = `
           :host {
             all: initial;
-            display: flex;
+            display: block;
             position: relative;
             width: 100%;
             height: 100%;
-            align-items: center;
-            justify-content: center;
             contain: content;
             background: #f8f9fa;
             border-radius: 8px;
@@ -493,20 +491,10 @@ function PhysicsContainer({ artifact }) {
           }
           ${artifact.code.css || ''}
           
-          /* Ensure Three.js canvas fits properly */
-          canvas {
-            width: 100% !important;
-            height: 100% !important;
-            outline: none;
-          }
-          
-          /* For 2D content */
-          div {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+          /* Only apply special centering for Three.js canvases */
+          canvas[data-engine="three.js"] {
+            display: block;
+            margin: 0 auto;
           }
         `;
         shadow.appendChild(styleElement);
@@ -550,12 +538,13 @@ function PhysicsContainer({ artifact }) {
             const renderer = new THREE.WebGLRenderer({ 
               antialias: true,
               alpha: true,
-              preserveDrawingBuffer: true // Enables taking snapshots
+              preserveDrawingBuffer: true
             });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.domElement.setAttribute('data-engine', 'three.js'); // Add this line to mark Three.js canvases
             wrapper.appendChild(renderer.domElement);
             
             // Add better lighting setup
