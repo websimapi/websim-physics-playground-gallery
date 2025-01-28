@@ -118,41 +118,37 @@ function PhysicsContainer({ artifact }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [mountError, setMountError] = useState(null);
-  const sandboxId = `physics-sandbox-${artifact.id}`;
-
+  
   useEffect(() => {
-    let cleanup = () => {};
-    let shadow = null;
     let mounted = true;
-    
+    let shadow = null;
+    let cleanup = () => {};
+
     const initializePhysics = () => {
       try {
         if (!containerRef.current || !mounted) return;
-
-        const container = containerRef.current;
-        const sandbox = container.querySelector('.physics-content');
         
+        // Get the physics content container
+        const sandbox = containerRef.current.querySelector('.physics-content');
         if (!sandbox) {
           throw new Error('Could not find physics content container');
         }
 
-        // Remove any existing shadow root
+        // Clear any existing content and shadow root
         if (sandbox.shadowRoot) {
-          cleanup();
-          sandbox.innerHTML = '';
+          sandbox.shadowRoot.innerHTML = '';
+        } else {
+          shadow = sandbox.attachShadow({ mode: 'open' });
         }
 
-        // Create new shadow root
-        shadow = sandbox.attachShadow({ mode: 'open' });
-        
-        // Create container div first
-        const physicsContainer = document.createElement('div');
-        physicsContainer.id = sandboxId;
-        shadow.appendChild(physicsContainer);
-        
+        // Create wrapper element
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'width: 100%; height: 100%; position: relative;';
+        shadow.appendChild(wrapper);
+
         // Add styles
-        const style = document.createElement('style');
-        style.textContent = `
+        const styleElement = document.createElement('style');
+        styleElement.textContent = `
           :host {
             all: initial;
             display: block;
@@ -163,142 +159,120 @@ function PhysicsContainer({ artifact }) {
           }
           ${artifact.code.css || ''}
         `;
-        shadow.appendChild(style);
-        
+        shadow.appendChild(styleElement);
+
         // Add HTML content
-        physicsContainer.innerHTML = artifact.code.html || '';
-        
-        // Create isolated script context
-        const scriptContent = `
-          (() => {
+        wrapper.innerHTML = artifact.code.html || '';
+
+        // Create a safe sandbox environment
+        const sandboxEnvironment = {
+          rootElement: wrapper,
+          document: {
+            getElementById: (id) => wrapper.querySelector('#' + id),
+            querySelector: (sel) => wrapper.querySelector(sel),
+            querySelectorAll: (sel) => wrapper.querySelectorAll(sel),
+            createElement: (tag) => document.createElement(tag),
+          },
+          window: {
+            innerWidth: wrapper.clientWidth,
+            innerHeight: wrapper.clientHeight,
+          },
+          console: {
+            log: (...args) => console.log(`[Physics ${artifact.id}]:`, ...args),
+            error: (...args) => console.error(`[Physics ${artifact.id}]:`, ...args),
+            warn: (...args) => console.warn(`[Physics ${artifact.id}]:`, ...args),
+          },
+          Math: Object.create(Math),
+        };
+
+        // Animation and timing management
+        const animations = new Set();
+        const timers = new Set();
+        const intervals = new Set();
+
+        sandboxEnvironment.requestAnimationFrame = (cb) => {
+          const id = window.requestAnimationFrame((timestamp) => {
+            if (!animations.has(id) || !mounted) return;
+            animations.delete(id);
             try {
-              const rootElement = document.getElementById('${sandboxId}');
-              if (!rootElement) throw new Error('Container not found');
-              
-              // Track animation frames and timeouts
-              const activeAnimationFrames = new Set();
-              const activeTimeouts = new Set();
-              const activeIntervals = new Set();
-              
-              // Create sandbox environment
-              const sandbox = {
-                rootElement,
-                document: {
-                  getElementById: (id) => rootElement.querySelector('#' + id),
-                  querySelector: (sel) => rootElement.querySelector(sel),
-                  querySelectorAll: (sel) => rootElement.querySelectorAll(sel)
-                },
-                console: {
-                  log: (...args) => console.log('[Physics ${artifact.id}]:', ...args),
-                  error: (...args) => console.error('[Physics ${artifact.id}]:', ...args),
-                  warn: (...args) => console.warn('[Physics ${artifact.id}]:', ...args)
-                },
-                requestAnimationFrame: (cb) => {
-                  const id = window.requestAnimationFrame((timestamp) => {
-                    if (!activeAnimationFrames.has(id)) return;
-                    activeAnimationFrames.delete(id);
-                    try {
-                      cb(timestamp);
-                    } catch (e) {
-                      console.error('[Physics ${artifact.id}] Animation error:', e);
-                    }
-                  });
-                  activeAnimationFrames.add(id);
-                  return id;
-                },
-                cancelAnimationFrame: (id) => {
-                  activeAnimationFrames.delete(id);
-                  window.cancelAnimationFrame(id);
-                },
-                setTimeout: (cb, delay) => {
-                  const id = window.setTimeout(() => {
-                    if (!activeTimeouts.has(id)) return;
-                    activeTimeouts.delete(id);
-                    try {
-                      cb();
-                    } catch (e) {
-                      console.error('[Physics ${artifact.id}] Timeout error:', e);
-                    }
-                  }, delay);
-                  activeTimeouts.add(id);
-                  return id;
-                },
-                clearTimeout: (id) => {
-                  activeTimeouts.delete(id);
-                  window.clearTimeout(id);
-                },
-                setInterval: (cb, delay) => {
-                  const id = window.setInterval(() => {
-                    if (!activeIntervals.has(id)) return;
-                    try {
-                      cb();
-                    } catch (e) {
-                      console.error('[Physics ${artifact.id}] Interval error:', e);
-                    }
-                  }, delay);
-                  activeIntervals.add(id);
-                  return id;
-                },
-                clearInterval: (id) => {
-                  activeIntervals.delete(id);
-                  window.clearInterval(id);
-                },
-                Math: Object.create(Math)
-              };
-
-              // Store cleanup function
-              rootElement.cleanup = () => {
-                activeAnimationFrames.forEach(id => window.cancelAnimationFrame(id));
-                activeTimeouts.forEach(id => window.clearTimeout(id));
-                activeIntervals.forEach(id => window.clearInterval(id));
-                activeAnimationFrames.clear();
-                activeTimeouts.clear();
-                activeIntervals.clear();
-              };
-
-              // Run physics code in sandbox
-              with (sandbox) {
-                ${artifact.code.js || ''}
-              }
-            } catch (error) {
-              console.error('[Physics ${artifact.id}] Initialization error:', error);
+              cb(timestamp);
+            } catch (e) {
+              console.error(`[Physics ${artifact.id}] Animation error:`, e);
             }
-          })();
-        `;
+          });
+          animations.add(id);
+          return id;
+        };
 
-        const script = document.createElement('script');
-        script.textContent = scriptContent;
-        shadow.appendChild(script);
+        sandboxEnvironment.setTimeout = (cb, delay) => {
+          const id = window.setTimeout(() => {
+            if (!timers.has(id) || !mounted) return;
+            timers.delete(id);
+            try {
+              cb();
+            } catch (e) {
+              console.error(`[Physics ${artifact.id}] Timeout error:`, e);
+            }
+          }, delay);
+          timers.add(id);
+          return id;
+        };
+
+        sandboxEnvironment.setInterval = (cb, delay) => {
+          const id = window.setInterval(() => {
+            if (!intervals.has(id) || !mounted) return;
+            try {
+              cb();
+            } catch (e) {
+              console.error(`[Physics ${artifact.id}] Interval error:`, e);
+            }
+          }, delay);
+          intervals.add(id);
+          return id;
+        };
 
         cleanup = () => {
-          try {
-            if (shadow) {
-              const container = shadow.getElementById(sandboxId);
-              if (container && typeof container.cleanup === 'function') {
-                container.cleanup();
-              }
-              
-              while (shadow.firstChild) {
-                shadow.removeChild(shadow.firstChild);
-              }
-            }
-          } catch (e) {
-            console.warn('[Physics ${artifact.id}] Cleanup error:', e);
+          mounted = false;
+          animations.forEach(id => window.cancelAnimationFrame(id));
+          timers.forEach(id => window.clearTimeout(id));
+          intervals.forEach(id => window.clearInterval(id));
+          animations.clear();
+          timers.clear();
+          intervals.clear();
+          if (shadow) {
+            shadow.innerHTML = '';
           }
         };
+
+        // Execute the physics code in the sandbox
+        const code = `
+          with (sandbox) {
+            try {
+              ${artifact.code.js || ''}
+            } catch (error) {
+              console.error('[Physics ${artifact.id}] Runtime error:', error);
+            }
+          }
+        `;
+
+        const scriptElement = document.createElement('script');
+        scriptElement.textContent = code;
+        
+        // Execute the code with the sandbox environment
+        (new Function('sandbox', code))(sandboxEnvironment);
+
       } catch (error) {
-        console.error('[Physics ${artifact.id}] Mount error:', error);
+        console.error(`[Physics ${artifact.id}] Initialization error:`, error);
         setMountError(error.message);
       }
     };
 
-    // Initialize physics with a small delay to ensure DOM is ready
+    // Initialize with a small delay to ensure DOM is ready
     const initTimer = setTimeout(initializePhysics, 100);
 
     return () => {
-      mounted = false;
-      clearTimeout(initTimer);
       cleanup();
+      clearTimeout(initTimer);
     };
   }, [artifact.id, artifact.code]);
 
@@ -318,23 +292,12 @@ function PhysicsContainer({ artifact }) {
 
   const isOwner = artifact.username === room.party.client.username;
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('default', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
-  };
-
   return (
     <div className="physics-container" ref={containerRef}>
       {isOwner && (
         <button 
           className="delete-button" 
-          onClick={handleDelete}
+          onClick={() => handleDelete(artifact.id)}
           disabled={isDeleting}
           title="Delete this artifact"
         >
@@ -380,7 +343,15 @@ function PhysicsContainer({ artifact }) {
         </div>
         <div className="details-section">
           <div className="details-label">Created</div>
-          <div className="details-value">{formatDate(artifact.created_at)}</div>
+          <div className="details-value">
+            {new Intl.DateTimeFormat('default', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            }).format(new Date(artifact.created_at))}
+          </div>
         </div>
         <div className="details-section">
           <div className="details-label">Created By</div>
