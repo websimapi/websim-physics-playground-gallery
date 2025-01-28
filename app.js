@@ -29,16 +29,43 @@ function PhysicsPlayground() {
         },
         body: JSON.stringify({
           prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
-          Respond with HTML, CSS, and JavaScript code that demonstrates the physics concept.
+          The response must be valid JSON matching this interface:
+
+          interface PhysicsArtifact {
+            html: string;      // The HTML code for the demonstration
+            css: string;       // The CSS styles for the demonstration
+            js: string;        // The JavaScript code for the demonstration
+            title: string;     // A short title describing the demonstration
+            description: string; // A longer description explaining the physics concept
+          }
+
+          {
+            "html": "<div class='container'><svg width='300' height='200'>...</svg></div>",
+            "css": ".container { ... }",
+            "js": "const svg = document.querySelector('svg'); ...",
+            "title": "Simple Pendulum Simulation",
+            "description": "This demonstration shows a pendulum swinging under the influence of gravity..."
+          }
+
           The code should be self-contained and use SVG for graphics where possible.
+          Ensure all code is properly escaped for JSON.
           
-          Prompt: ${prompt}`,
+          Create a physics demonstration for: ${prompt}`,
           data: prompt
         }),
       });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const artifactCode = await response.json();
       
+      // Validate the response has all required fields
+      if (!artifactCode.html || !artifactCode.css || !artifactCode.js || !artifactCode.title || !artifactCode.description) {
+        throw new Error('Invalid response format from AI');
+      }
+
       // Store the artifact in the database
       await room.collection('physics_artifact').create({
         prompt,
@@ -49,8 +76,8 @@ function PhysicsPlayground() {
 
       setPrompt('');
     } catch (err) {
-      setError('Failed to create physics simulation. Please try again.');
-      console.error(err);
+      console.error('Error details:', err);
+      setError('Failed to create physics simulation. Please try again with a different prompt.');
     } finally {
       setIsSubmitting(false);
     }
