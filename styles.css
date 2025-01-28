@@ -81,21 +81,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.physics-content canvas {
-  max-width: 100%;
-  max-height: 100%;
-  display: block;
-  margin: auto;
-}
-
-.physics-content > *:first-child {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: #f8f9fa;
 }
 
 .physics-content::before {
@@ -406,6 +392,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
+  background: #f8f9fa;
 }
 
 .fullscreen-body .physics-content {
@@ -420,15 +407,12 @@ button:disabled {
 .fullscreen-body .physics-content > * {
   width: 100%;
   height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .fullscreen-body canvas {
   width: 100% !important;
   height: 100% !important;
-  display: block;
+  outline: none;
 }
 
 .fullscreen-body .physics-content :host {
@@ -440,30 +424,6 @@ button:disabled {
 }
 
 .fullscreen-body .physics-content :host > div {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.physics-content :host {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.physics-content :host > div {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.physics-content div:not([class]) {
   width: 100%;
   height: 100%;
   display: flex;
