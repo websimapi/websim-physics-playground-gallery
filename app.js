@@ -611,12 +611,107 @@ function PhysicsPlayground() {
   const [prompt, setPrompt] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const room = new WebsimSocket();
   
   const artifacts = useSyncExternalStore(
     room.collection('physics_artifact').subscribe,
     () => room.collection('physics_artifact').getList()
   );
+
+  // Sort artifacts and calculate pagination
+  const sortedArtifacts = [...artifacts].sort((a, b) => 
+    new Date(b.created_at) - new Date(a.created_at)
+  );
+
+  const totalPages = Math.ceil(sortedArtifacts.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentArtifacts = sortedArtifacts.slice(startIndex, endIndex);
+
+  const handlePageChange = (pageNumber) => {
+    setCurrentPage(pageNumber);
+    // Scroll to top of gallery when page changes
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  };
+
+  const renderPagination = () => {
+    const pages = [];
+    const maxVisiblePages = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+
+    // Adjust start page if we're near the end
+    if (endPage - startPage + 1 < maxVisiblePages) {
+      startPage = Math.max(1, endPage - maxVisiblePages + 1);
+    }
+
+    // Add first page button if not visible
+    if (startPage > 1) {
+      pages.push(
+        <button 
+          key="1" 
+          onClick={() => handlePageChange(1)}
+          disabled={currentPage === 1}
+        >
+          1
+        </button>
+      );
+      if (startPage > 2) pages.push(<span key="ellipsis1">...</span>);
+    }
+
+    // Add page numbers
+    for (let i = startPage; i <= endPage; i++) {
+      pages.push(
+        <button
+          key={i}
+          onClick={() => handlePageChange(i)}
+          className={currentPage === i ? 'active' : ''}
+        >
+          {i}
+        </button>
+      );
+    }
+
+    // Add last page button if not visible
+    if (endPage < totalPages) {
+      if (endPage < totalPages - 1) pages.push(<span key="ellipsis2">...</span>);
+      pages.push(
+        <button 
+          key={totalPages} 
+          onClick={() => handlePageChange(totalPages)}
+          disabled={currentPage === totalPages}
+        >
+          {totalPages}
+        </button>
+      );
+    }
+
+    return (
+      <div className="pagination">
+        <button 
+          onClick={() => handlePageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+        >
+          ←
+        </button>
+        {pages}
+        <button 
+          onClick={() => handlePageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+        >
+          →
+        </button>
+        <span className="pagination-info">
+          Showing {startIndex + 1}-{Math.min(endIndex, sortedArtifacts.length)} of {sortedArtifacts.length}
+        </span>
+      </div>
+    );
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -719,7 +814,7 @@ function PhysicsPlayground() {
           Create a physics demonstration for: ${prompt}`,
           data: prompt
         }),
-      });
+      );
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -739,6 +834,7 @@ function PhysicsPlayground() {
       });
 
       setPrompt('');
+      setCurrentPage(1);
     } catch (err) {
       console.error('Error details:', err);
       setError('Failed to create physics simulation. Please try again with a different prompt.');
@@ -768,10 +864,12 @@ function PhysicsPlayground() {
       </div>
 
       <div className="gallery">
-        {artifacts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(artifact => (
+        {currentArtifacts.map(artifact => (
           <PhysicsContainer key={artifact.id} artifact={artifact} />
         ))}
       </div>
+
+      {totalPages > 1 && renderPagination()}
     </div>
   );
 }
