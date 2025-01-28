@@ -7,7 +7,7 @@ const {
 
 function initializePhysics(containerRef, artifact, mounted, setMountError) {
   const logPrefix = `[Physics ${artifact.id}]`;
-  console.log(`${logPrefix} Initializing physics for artifact: ${artifact.code.title}`);
+  console.log(`${logPrefix} Initializing physics for artifact:`, artifact.code.title);
 
   try {
     if (!containerRef.current) {
@@ -291,9 +291,12 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
 
     console.log(`${logPrefix} Executing physics code`);
     try {
+      // Clean up any remaining template literals
+      const cleanedJs = artifact.code.js.replace(/`/g, "'").replace(/\${/g, "' + ").replace(/}/g, " + '");
+      
       // First verify the code can be parsed
       try {
-        new Function('sandbox', `with (sandbox) { ${artifact.code.js} }`);
+        new Function('sandbox', `with (sandbox) { ${cleanedJs} }`);
       } catch (syntaxError) {
         console.error(`${logPrefix} Syntax error in physics code:`, syntaxError);
         throw new Error(`Code syntax error: ${syntaxError.message}`);
@@ -302,7 +305,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       const code = `
         with (sandbox) {
           try {
-            ${artifact.code.js || ''}
+            ${cleanedJs || ''}
           } catch (error) {
             console.error('${logPrefix} Runtime error:', error);
             throw error;
@@ -781,12 +784,12 @@ function PhysicsPlayground() {
           }
 
           Important:
-          1. All JavaScript code must be properly escaped for JSON
+          1. All JavaScript code must be properly escaped for JSON - NO TEMPLATE LITERALS OR BACKTICKS
           2. Ensure HTML includes necessary containers
           3. Make sure all variables are properly declared
           4. All Three.js/CANNON.js operations must happen after scene initialization
           5. Use window.requestAnimationFrame for animation loops
-          6. Avoid template literals in the response JSON
+          6. Use single or double quotes, NOT backticks in the JavaScript code
 
           Example structure:
           {
@@ -813,6 +816,9 @@ function PhysicsPlayground() {
       if (!artifactCode.html || !artifactCode.css || !artifactCode.js || !artifactCode.title || !artifactCode.description) {
         throw new Error('Invalid response format from AI - missing required fields');
       }
+
+      // Clean up any template literals in the JavaScript code
+      artifactCode.js = artifactCode.js.replace(/`/g, "'").replace(/\${/g, "' + ").replace(/}/g, " + '");
 
       // Validate JavaScript syntax before creating artifact
       try {
