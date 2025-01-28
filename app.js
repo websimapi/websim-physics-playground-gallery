@@ -2,11 +2,13 @@ const {
   useState,
   useEffect,
   useSyncExternalStore,
-  useRef
+  useRef,
+  useCallback
 } = React;
 
 function initializePhysics(containerRef, artifact, mounted, setMountError) {
   try {
+    // Bail early if container ref or mounted state is invalid
     if (!containerRef.current || !mounted) return;
     
     const sandbox = containerRef.current.querySelector('.physics-content');
@@ -14,6 +16,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       throw new Error('Could not find physics content container');
     }
 
+    // Create shadow DOM if needed
     let shadow = null;
     if (sandbox.shadowRoot) {
       sandbox.shadowRoot.innerHTML = '';
@@ -21,46 +24,61 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       shadow = sandbox.attachShadow({ mode: 'open' });
     }
 
+    // Create wrapper with scene container
     const wrapper = document.createElement('div');
     wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
     shadow.appendChild(wrapper);
 
+    // Add scene container for 3D scenes if not present in HTML
+    if (artifact.code.html.includes('scene-container') && !wrapper.querySelector('.scene-container')) {
+      const sceneContainer = document.createElement('div');
+      sceneContainer.className = 'scene-container';
+      sceneContainer.style.cssText = 'width: 100%; height: 100%; position: relative;';
+      wrapper.appendChild(sceneContainer);
+    }
+
+    // Add styles
     const styleElement = document.createElement('style');
     styleElement.textContent = `
       :host {
         all: initial;
-        display: block;
+        display: flex;
         position: relative;
         width: 100%;
         height: 100%;
+        align-items: center;
+        justify-content: center;
         contain: content;
       }
       ${artifact.code.css || ''}
       
-      /* Only apply special centering for Three.js canvases */
-      canvas[data-engine="three.js"] {
-        display: block;
-        margin: 0 auto;
+      /* Ensure Three.js canvas fits properly */
+      canvas {
+        width: 100% !important;
+        height: 100% !important;
+        outline: none;
+      }
+      
+      /* For 2D content */
+      div {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
     `;
     shadow.appendChild(styleElement);
 
+    // Add HTML content after style element
     wrapper.innerHTML = artifact.code.html || '';
 
-    const eventListeners = new Set();
+    // Setup sandbox environment
     const sandboxWindow = {
       innerWidth: wrapper.clientWidth,
       innerHeight: wrapper.clientHeight,
-      addEventListener: (event, handler, options) => {
-        const wrappedHandler = (...args) => {
-          if (mounted) handler(...args);
-        };
-        eventListeners.add([event, wrappedHandler, options]);
-        window.addEventListener(event, wrappedHandler, options);
-      },
-      removeEventListener: (event, handler, options) => {
-        window.removeEventListener(event, handler, options);
-      },
+      addEventListener: (event, handler, options) => window.addEventListener(event, handler, options),
+      removeEventListener: (event, handler, options) => window.removeEventListener(event, handler, options),
       requestAnimationFrame: (cb) => window.requestAnimationFrame(cb),
       devicePixelRatio: window.devicePixelRatio,
       dispatchEvent: (event) => window.dispatchEvent(event),
@@ -85,23 +103,16 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       THREE: window.THREE,
       CANNON: window.CANNON,
       initThreeScene: () => {
+        const container = wrapper.querySelector('.scene-container') || wrapper;
+        if (!container) {
+          throw new Error('Could not find container for Three.js scene');
+        }
+
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xf8f9fa);
         
-        let container = wrapper.querySelector('.scene-container');
-        if (!container) {
-          container = document.createElement('div');
-          container.className = 'scene-container';
-          wrapper.appendChild(container);
-        }
-        
         const aspectRatio = container.clientWidth / container.clientHeight;
-        const camera = new THREE.PerspectiveCamera(
-          60,
-          aspectRatio,
-          0.1,
-          1000
-        );
+        const camera = new THREE.PerspectiveCamera(60, aspectRatio, 0.1, 1000);
         camera.position.set(4, 4, 4);
         camera.lookAt(0, 0, 0);
         
@@ -115,50 +126,12 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         
-        if (container) {
-          container.appendChild(renderer.domElement);
-          renderer.domElement.setAttribute('data-engine', 'three.js');
-        }
+        container.appendChild(renderer.domElement);
+        renderer.domElement.setAttribute('data-engine', 'three.js');
         
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-        scene.add(ambientLight);
-        
-        const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        mainLight.position.set(5, 5, 5);
-        mainLight.castShadow = true;
-        mainLight.shadow.mapSize.width = 1024;
-        mainLight.shadow.mapSize.height = 1024;
-        scene.add(mainLight);
-        
-        const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
-        fillLight.position.set(-5, 0, -5);
-        scene.add(fillLight);
-        
-        const controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-        controls.screenSpacePanning = true;
-        controls.enableZoom = true;
-        controls.autoRotate = true;
-        controls.autoRotateSpeed = 1;
-        
-        const gridHelper = new THREE.GridHelper(10, 10, 0xcccccc, 0xeeeeee);
-        gridHelper.material.opacity = 0.2;
-        gridHelper.material.transparent = true;
-        scene.add(gridHelper);
-        
-        const handleResize = () => {
-          if (!container || !mounted) return;
-          const width = container.clientWidth;
-          const height = container.clientHeight;
-          const aspect = width / height;
-          
-          camera.aspect = aspect;
-          camera.updateProjectionMatrix();
-          renderer.setSize(width, height, false);
-        };
-        
-        sandboxWindow.addEventListener('resize', handleResize);
+        const lights = setupLights(scene);
+        const controls = setupControls(camera, renderer);
+        const grid = setupGrid(scene);
         
         function animate() {
           if (!mounted) return;
@@ -166,6 +139,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
           controls.update();
           renderer.render(scene, camera);
         }
+        
         animate();
         
         return {
@@ -174,62 +148,61 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
           renderer,
           controls,
           dispose: () => {
-            sandboxWindow.removeEventListener('resize', handleResize);
             controls.dispose();
             renderer.dispose();
+            lights.forEach(light => scene.remove(light));
+            if (grid) scene.remove(grid);
             if (renderer.domElement && renderer.domElement.parentNode) {
               renderer.domElement.parentNode.removeChild(renderer.domElement);
             }
           }
         };
-      },
+      }
     };
 
-    const animations = new Set();
-    const timers = new Set();
-    const intervals = new Set();
+    // Helper functions for Three.js scene setup
+    function setupLights(scene) {
+      const lights = [];
+      const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+      scene.add(ambient);
+      lights.push(ambient);
 
-    sandboxEnvironment.requestAnimationFrame = (cb) => {
-      const id = window.requestAnimationFrame((timestamp) => {
-        if (!animations.has(id) || !mounted) return;
-        animations.delete(id);
-        try {
-          cb(timestamp);
-        } catch (e) {
-          console.error(`[Physics ${artifact.id}] Animation error:`, e);
-        }
-      });
-      animations.add(id);
-      return id;
-    };
+      const main = new THREE.DirectionalLight(0xffffff, 0.8);
+      main.position.set(5, 5, 5);
+      main.castShadow = true;
+      main.shadow.mapSize.width = 1024;
+      main.shadow.mapSize.height = 1024;
+      scene.add(main);
+      lights.push(main);
 
-    sandboxEnvironment.setTimeout = (cb, delay) => {
-      const id = window.setTimeout(() => {
-        if (!timers.has(id) || !mounted) return;
-        timers.delete(id);
-        try {
-          cb();
-        } catch (e) {
-          console.error(`[Physics ${artifact.id}] Timeout error:`, e);
-        }
-      }, delay);
-      timers.add(id);
-      return id;
-    };
+      const fill = new THREE.DirectionalLight(0xffffff, 0.3);
+      fill.position.set(-5, 0, -5);
+      scene.add(fill);
+      lights.push(fill);
 
-    sandboxEnvironment.setInterval = (cb, delay) => {
-      const id = window.setInterval(() => {
-        if (!intervals.has(id) || !mounted) return;
-        try {
-          cb();
-        } catch (e) {
-          console.error(`[Physics ${artifact.id}] Interval error:`, e);
-        }
-      }, delay);
-      intervals.add(id);
-      return id;
-    };
+      return lights;
+    }
 
+    function setupControls(camera, renderer) {
+      const controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.screenSpacePanning = true;
+      controls.enableZoom = true;
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 1;
+      return controls;
+    }
+
+    function setupGrid(scene) {
+      const grid = new THREE.GridHelper(10, 10, 0xcccccc, 0xeeeeee);
+      grid.material.opacity = 0.2;
+      grid.material.transparent = true;
+      scene.add(grid);
+      return grid;
+    }
+
+    // Execute the artifact code
     const code = `
       with (sandbox) {
         try {
@@ -242,14 +215,9 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
     
     (new Function('sandbox', code))(sandboxEnvironment);
 
+    // Return cleanup function
     return () => {
       mounted = false;
-      animations.forEach(id => window.cancelAnimationFrame(id));
-      timers.forEach(id => window.clearTimeout(id));
-      intervals.forEach(id => window.clearInterval(id));
-      eventListeners.forEach(([event, handler, options]) => {
-        window.removeEventListener(event, handler, options);
-      });
       if (shadow) {
         shadow.innerHTML = '';
       }
