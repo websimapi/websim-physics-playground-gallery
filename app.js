@@ -92,35 +92,13 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
               1000
             );
             
-            const renderer = new THREE.WebGLRenderer({ 
-              antialias: true,
-              alpha: true // Enable transparency
-            });
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(wrapper.clientWidth, wrapper.clientHeight, false);
-            
-            // Center and style the canvas
-            renderer.domElement.style.display = 'block';
-            renderer.domElement.style.margin = 'auto';
-            renderer.domElement.style.width = '100%';
-            renderer.domElement.style.height = '100%';
-            
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
             wrapper.appendChild(renderer.domElement);
             
             const controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true; // Add smooth damping
-            controls.dampingFactor = 0.05;
             
-            // Add ambient light
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-            scene.add(ambientLight);
-            
-            // Add directional light
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-            directionalLight.position.set(5, 5, 5);
-            scene.add(directionalLight);
-            
-            // Handle resize
+            // Handle fullscreen resize
             const handleResize = () => {
               const width = wrapper.clientWidth;
               const height = wrapper.clientHeight;
@@ -131,33 +109,22 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
             
             window.addEventListener('resize', handleResize);
             
-            // Set initial camera position
-            camera.position.z = 5;
-            camera.position.y = 2;
-            camera.position.x = 2;
-            camera.lookAt(0, 0, 0);
-            
-            // Update controls in animation loop
-            function animate() {
-              requestAnimationFrame(animate);
-              controls.update();
-              renderer.render(scene, camera);
-            }
-            animate();
+            // Store cleanup for Three.js scene
+            sceneCleanup = () => {
+              window.removeEventListener('resize', handleResize);
+              controls.dispose();
+              renderer.dispose();
+              if (renderer.domElement && renderer.domElement.parentNode) {
+                renderer.domElement.parentNode.removeChild(renderer.domElement);
+              }
+            };
             
             return {
               scene,
               camera,
               renderer,
               controls,
-              dispose: () => {
-                window.removeEventListener('resize', handleResize);
-                controls.dispose();
-                renderer.dispose();
-                if (renderer.domElement && renderer.domElement.parentNode) {
-                  renderer.domElement.parentNode.removeChild(renderer.domElement);
-                }
-              }
+              dispose: sceneCleanup
             };
           },
           loaders: {
@@ -381,7 +348,7 @@ interface PhysicsArtifact {
             </button>
             <button 
               type="submit"
-              disabled={isSubmitting || !suggestions.trim()}
+              disabled={isSubmitting}
             >
               {isSubmitting ? 'Creating...' : 'Create Iteration'}
             </button>
@@ -546,59 +513,74 @@ function PhysicsContainer({ artifact }) {
           THREE: window.THREE,
           initThreeScene: () => {
             const scene = new THREE.Scene();
+            
+            const aspectRatio = wrapper.clientWidth / wrapper.clientHeight;
             const camera = new THREE.PerspectiveCamera(
-              75,
-              wrapper.clientWidth / wrapper.clientHeight,
+              60, 
+              aspectRatio,
               0.1,
               1000
             );
             
+            camera.position.set(0, 2, 5);
+            camera.lookAt(0, 0, 0);
+            
             const renderer = new THREE.WebGLRenderer({ 
               antialias: true,
-              alpha: true // Enable transparency
+              alpha: true 
             });
+            
             renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(wrapper.clientWidth, wrapper.clientHeight, false);
+            renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
             
-            // Center and style the canvas
-            renderer.domElement.style.display = 'block';
-            renderer.domElement.style.margin = 'auto';
-            renderer.domElement.style.width = '100%';
-            renderer.domElement.style.height = '100%';
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputEncoding = THREE.sRGBEncoding;
             
-            wrapper.appendChild(renderer.domElement);
+            const container = document.createElement('div');
+            container.className = 'threejs-container';
+            container.appendChild(renderer.domElement);
+            wrapper.appendChild(container);
             
             const controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true; // Add smooth damping
+            controls.enableDamping = true; 
             controls.dampingFactor = 0.05;
             
-            // Add ambient light
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
             scene.add(ambientLight);
             
-            // Add directional light
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
             directionalLight.position.set(5, 5, 5);
+            directionalLight.castShadow = true;
+            
+            directionalLight.shadow.mapSize.width = 1024;
+            directionalLight.shadow.mapSize.height = 1024;
+            directionalLight.shadow.camera.near = 0.1;
+            directionalLight.shadow.camera.far = 100;
+            directionalLight.shadow.bias = -0.001;
             scene.add(directionalLight);
             
-            // Handle resize
+            scene.fog = new THREE.Fog(0xf0f2f5, 10, 50);
+            
+            const gridHelper = new THREE.GridHelper(20, 20, 0x808080, 0x808080);
+            gridHelper.material.opacity = 0.2;
+            gridHelper.material.transparent = true;
+            scene.add(gridHelper);
+            
             const handleResize = () => {
               const width = wrapper.clientWidth;
               const height = wrapper.clientHeight;
-              camera.aspect = width / height;
+              const aspectRatio = width / height;
+              
+              camera.aspect = aspectRatio;
               camera.updateProjectionMatrix();
-              renderer.setSize(width, height, false);
+              
+              renderer.setSize(width, height);
+              renderer.setPixelRatio(window.devicePixelRatio);
             };
             
             window.addEventListener('resize', handleResize);
             
-            // Set initial camera position
-            camera.position.z = 5;
-            camera.position.y = 2;
-            camera.position.x = 2;
-            camera.lookAt(0, 0, 0);
-            
-            // Update controls in animation loop
             function animate() {
               requestAnimationFrame(animate);
               controls.update();
@@ -615,8 +597,8 @@ function PhysicsContainer({ artifact }) {
                 window.removeEventListener('resize', handleResize);
                 controls.dispose();
                 renderer.dispose();
-                if (renderer.domElement && renderer.domElement.parentNode) {
-                  renderer.domElement.parentNode.removeChild(renderer.domElement);
+                if (container && container.parentNode) {
+                  container.parentNode.removeChild(container);
                 }
               }
             };
@@ -689,7 +671,7 @@ function PhysicsContainer({ artifact }) {
             try {
               ${artifact.code.js || ''}
             } catch (error) {
-              console.error('[Physics ${artifact.id}]:', error);
+              console.error('[Physics ${artifact.id}] Runtime error:', error);
             }
           }
         `;
@@ -697,7 +679,7 @@ function PhysicsContainer({ artifact }) {
         (new Function('sandbox', code))(sandboxEnvironment);
 
       } catch (error) {
-        console.error(`[Physics ${artifact.id}]:`, error);
+        console.error(`[Physics ${artifact.id}] Initialization error:`, error);
         setMountError(error.message);
       }
     };
