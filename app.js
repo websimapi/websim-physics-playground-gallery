@@ -11,7 +11,7 @@ function FullscreenModal({ isOpen, onClose, artifact, onUpdateZoom }) {
     setIs3D(is3DScene);
   }, [artifact.code.js]);
 
-  const handleZoomChange = async (newZoom) => {
+  const handleZoomChange = (newZoom) => {
     setZoom(newZoom);
     if (onUpdateZoom) {
       onUpdateZoom(newZoom);
@@ -19,7 +19,7 @@ function FullscreenModal({ isOpen, onClose, artifact, onUpdateZoom }) {
   };
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !containerRef.current) return;
     
     let mounted = true;
     let shadow = null;
@@ -35,8 +35,10 @@ function FullscreenModal({ isOpen, onClose, artifact, onUpdateZoom }) {
           throw new Error('Could not find physics content container');
         }
 
+        // Clean up existing shadow root if it exists
         if (sandbox.shadowRoot) {
           sandbox.shadowRoot.innerHTML = '';
+          shadow = sandbox.shadowRoot;
         } else {
           shadow = sandbox.attachShadow({ mode: 'open' });
         }
@@ -229,6 +231,7 @@ function FullscreenModal({ isOpen, onClose, artifact, onUpdateZoom }) {
       }
     };
 
+    // Initialize after a brief delay to ensure DOM is ready
     const initTimer = setTimeout(initializePhysics, 100);
 
     // Add resize observer to handle container size changes
@@ -240,7 +243,10 @@ function FullscreenModal({ isOpen, onClose, artifact, onUpdateZoom }) {
     });
     
     if (containerRef.current) {
-      resizeObserver.observe(containerRef.current.querySelector('.physics-content'));
+      const content = containerRef.current.querySelector('.physics-content');
+      if (content) {
+        resizeObserver.observe(content);
+      }
     }
 
     return () => {
