@@ -183,7 +183,25 @@ function IterateModal({ isOpen, onClose, artifact }) {
     setIsSubmitting(true);
 
     try {
-      const basePrompt = `Improve and iterate on this existing physics demonstration. Make it more detailed, more interactive, or add new features while maintaining its core concept.
+      // First, get the current iteration count for the artifact being iterated on
+      let currentCount = 0;
+      let current = artifact;
+      const visited = new Set();
+      
+      while (current && current.iteration_of && !visited.has(current.iteration_of)) {
+        visited.add(current.iteration_of);
+        currentCount++;
+        const parentArtifacts = await room.collection('physics_artifact')
+          .filter({ id: current.iteration_of })
+          .getList();
+        if (parentArtifacts && parentArtifacts.length > 0) {
+          current = parentArtifacts[0];
+        } else {
+          break;
+        }
+      }
+
+      const basePrompt = `Improve and iterate on this existing physics demonstration. Make it more detailed, more interactive, or add new features while maintaining its core concept. This is iteration #${currentCount + 1} of the original.
 
 Original demonstration:
 Title: ${artifact.code.title}
@@ -223,12 +241,13 @@ interface PhysicsArtifact {
         throw new Error('Invalid response format from AI');
       }
 
+      // Create the new iteration with the iteration_of field set
       await room.collection('physics_artifact').create({
-        prompt: `[Iteration] ${artifact.prompt}${suggestions ? ` with suggestions: ${suggestions}` : ''}`,
+        prompt: `[Iteration ${currentCount + 1}] ${artifact.prompt}${suggestions ? ` with suggestions: ${suggestions}` : ''}`,
         code: artifactCode,
         title: artifactCode.title,
         description: artifactCode.description,
-        iteration_of: artifact.id,
+        iteration_of: artifact.id
       });
 
       onClose();
@@ -290,24 +309,24 @@ function PhysicsContainer({ artifact }) {
   
   useEffect(() => {
     const countIterations = async () => {
-      let count = 0;
       let current = artifact;
+      let baseCount = 0;
       const visited = new Set(); // Prevent infinite loops if data is corrupted
       
       while (current && current.iteration_of && !visited.has(current.iteration_of)) {
         visited.add(current.iteration_of);
-        count++;
-        try {
-          const parentArtifacts = await room.collection('physics_artifact')
-            .filter({ id: current.iteration_of })
-            .getList();
+        const parentArtifacts = await room.collection('physics_artifact')
+          .filter({ id: current.iteration_of })
+          .getList();
+        
+        if (parentArtifacts && parentArtifacts.length > 0) {
+          baseCount++;
           current = parentArtifacts[0];
-        } catch (error) {
-          console.error('Error counting iterations:', error);
+        } else {
           break;
         }
       }
-      setIterationCount(count);
+      setIterationCount(baseCount);
     };
 
     countIterations();
