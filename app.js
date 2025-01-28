@@ -106,19 +106,24 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
         }
       },
       requestAnimationFrame: (cb) => window.requestAnimationFrame(cb),
+      cancelAnimationFrame: (id) => window.cancelAnimationFrame(id),
       devicePixelRatio: window.devicePixelRatio,
       dispatchEvent: (event) => window.dispatchEvent(event),
     };
 
+    const sandboxDocument = {
+      getElementById: (id) => wrapper.querySelector('#' + id),
+      querySelector: (sel) => wrapper.querySelector(sel),
+      querySelectorAll: (sel) => wrapper.querySelectorAll(sel),
+      createElement: (tag) => document.createElement(tag),
+      createElementNS: (ns, tag) => document.createElementNS(ns, tag),
+      body: wrapper,
+      head: shadow,
+    };
+
     const sandboxEnvironment = {
       rootElement: wrapper,
-      document: {
-        getElementById: (id) => wrapper.querySelector('#' + id),
-        querySelector: (sel) => wrapper.querySelector(sel),
-        querySelectorAll: (sel) => wrapper.querySelectorAll(sel),
-        createElement: (tag) => document.createElement(tag),
-        createElementNS: (ns, tag) => document.createElementNS(ns, tag),
-      },
+      document: sandboxDocument,
       window: sandboxWindow,
       console: {
         log: (...args) => console.log(logPrefix, ...args),
@@ -211,7 +216,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
           
           function animate() {
             if (!mounted) return;
-            requestAnimationFrame(animate);
+            sandboxEnvironment.requestAnimationFrame(animate);
             controls.update();
             renderer.render(scene, camera);
           }
@@ -248,7 +253,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
     const intervals = new Set();
 
     sandboxEnvironment.requestAnimationFrame = (cb) => {
-      const id = window.requestAnimationFrame((timestamp) => {
+      const id = sandboxWindow.requestAnimationFrame((timestamp) => {
         if (!animations.has(id) || !mounted) return;
         animations.delete(id);
         try {
@@ -259,6 +264,10 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       });
       animations.add(id);
       return id;
+    };
+
+    sandboxEnvironment.cancelAnimationFrame = (id) => {
+      sandboxWindow.cancelAnimationFrame(id);
     };
 
     sandboxEnvironment.setTimeout = (cb, delay) => {
@@ -275,6 +284,10 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       return id;
     };
 
+    sandboxEnvironment.clearTimeout = (id) => {
+      window.clearTimeout(id);
+    };
+
     sandboxEnvironment.setInterval = (cb, delay) => {
       const id = window.setInterval(() => {
         if (!intervals.has(id) || !mounted) return;
@@ -288,28 +301,50 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       return id;
     };
 
+    sandboxEnvironment.clearInterval = (id) => {
+      window.clearInterval(id);
+    };
+
     console.log(`${logPrefix} Executing physics code`);
     try {
-      const code = `
-        with (sandbox) {
-          try {
-            ${artifact.code.js || ''}
-          } catch (error) {
-            console.error('[Runtime error]:', error);
-          }
+      const scriptFunction = new Function(
+        'window',
+        'document',
+        'console',
+        'rootElement',
+        'initThreeScene',
+        'THREE',
+        'CANNON',
+        'requestAnimationFrame',
+        'cancelAnimationFrame',
+        'setTimeout',
+        'clearTimeout',
+        'setInterval',
+        'clearInterval',
+        `
+        'use strict';
+        try {
+          ${artifact.code.js || ''}
+        } catch (error) {
+          console.error('[Runtime error]:', error);
         }
-      `;
-      
-      let scriptFunction;
-      try {
-        scriptFunction = new Function('sandbox', code);
-      } catch (syntaxError) {
-        console.error(`${logPrefix} Syntax error in artifact code:`, syntaxError);
-        setMountError(`Syntax error in artifact code: ${syntaxError.message}`);
-        return () => {};
-      }
+      `);
 
-      scriptFunction(sandboxEnvironment);
+      scriptFunction(
+        sandboxEnvironment.window,
+        sandboxEnvironment.document,
+        sandboxEnvironment.console,
+        sandboxEnvironment.rootElement,
+        sandboxEnvironment.initThreeScene,
+        sandboxEnvironment.THREE,
+        sandboxEnvironment.CANNON,
+        sandboxEnvironment.requestAnimationFrame,
+        sandboxEnvironment.cancelAnimationFrame,
+        sandboxEnvironment.setTimeout,
+        sandboxEnvironment.clearTimeout,
+        sandboxEnvironment.setInterval,
+        sandboxEnvironment.clearInterval
+      );
 
     } catch (e) {
       console.error(`${logPrefix} Error executing physics code:`, e);
@@ -322,7 +357,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       console.log(`${logPrefix} Cleaning up`);
       try {
         mounted = false;
-        animations.forEach(id => window.cancelAnimationFrame(id));
+        animations.forEach(id => sandboxWindow.cancelAnimationFrame(id));
         timers.forEach(id => window.clearTimeout(id));
         intervals.forEach(id => window.clearInterval(id));
         eventListeners.forEach(([event, handler, options]) => {
