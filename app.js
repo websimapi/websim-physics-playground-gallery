@@ -35,29 +35,18 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
         styleElement.textContent = `
           :host {
             all: initial;
-            display: flex;
+            display: block;
             position: relative;
             width: 100%;
             height: 100%;
-            align-items: center;
-            justify-content: center;
             contain: content;
           }
           ${artifact.code.css || ''}
           
-          /* Ensure Three.js canvas fills container */
-          canvas {
-            width: 100% !important;
-            height: 100% !important;
-          }
-          
-          /* For 2D content */
-          div {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+          /* Only apply special centering for Three.js canvases */
+          canvas[data-engine="three.js"] {
+            display: block;
+            margin: 0 auto;
           }
         `;
         shadow.appendChild(styleElement);
@@ -94,9 +83,19 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
             
             const renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
+            renderer.domElement.setAttribute('data-engine', 'three.js');
             wrapper.appendChild(renderer.domElement);
             
             const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            
+            // Add directional light
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
             
             // Handle fullscreen resize
             const handleResize = () => {
@@ -513,80 +512,36 @@ function PhysicsContainer({ artifact }) {
           THREE: window.THREE,
           initThreeScene: () => {
             const scene = new THREE.Scene();
-            
-            const aspectRatio = wrapper.clientWidth / wrapper.clientHeight;
             const camera = new THREE.PerspectiveCamera(
-              60, 
-              aspectRatio,
+              75,
+              wrapper.clientWidth / wrapper.clientHeight,
               0.1,
               1000
             );
             
-            camera.position.set(0, 2, 5);
-            camera.lookAt(0, 0, 0);
-            
-            const renderer = new THREE.WebGLRenderer({ 
-              antialias: true,
-              alpha: true 
-            });
-            
-            renderer.setPixelRatio(window.devicePixelRatio);
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
-            
-            renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            renderer.outputEncoding = THREE.sRGBEncoding;
-            
-            const container = document.createElement('div');
-            container.className = 'threejs-container';
-            container.appendChild(renderer.domElement);
-            wrapper.appendChild(container);
+            wrapper.appendChild(renderer.domElement);
             
             const controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true; 
-            controls.dampingFactor = 0.05;
             
+            // Add ambient light
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
             scene.add(ambientLight);
             
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            // Add directional light
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
             directionalLight.position.set(5, 5, 5);
-            directionalLight.castShadow = true;
-            
-            directionalLight.shadow.mapSize.width = 1024;
-            directionalLight.shadow.mapSize.height = 1024;
-            directionalLight.shadow.camera.near = 0.1;
-            directionalLight.shadow.camera.far = 100;
-            directionalLight.shadow.bias = -0.001;
             scene.add(directionalLight);
             
-            scene.fog = new THREE.Fog(0xf0f2f5, 10, 50);
-            
-            const gridHelper = new THREE.GridHelper(20, 20, 0x808080, 0x808080);
-            gridHelper.material.opacity = 0.2;
-            gridHelper.material.transparent = true;
-            scene.add(gridHelper);
-            
+            // Handle resize
             const handleResize = () => {
-              const width = wrapper.clientWidth;
-              const height = wrapper.clientHeight;
-              const aspectRatio = width / height;
-              
-              camera.aspect = aspectRatio;
+              camera.aspect = wrapper.clientWidth / wrapper.clientHeight;
               camera.updateProjectionMatrix();
-              
-              renderer.setSize(width, height);
-              renderer.setPixelRatio(window.devicePixelRatio);
+              renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
             };
             
             window.addEventListener('resize', handleResize);
-            
-            function animate() {
-              requestAnimationFrame(animate);
-              controls.update();
-              renderer.render(scene, camera);
-            }
-            animate();
             
             return {
               scene,
@@ -595,11 +550,8 @@ function PhysicsContainer({ artifact }) {
               controls,
               dispose: () => {
                 window.removeEventListener('resize', handleResize);
-                controls.dispose();
                 renderer.dispose();
-                if (container && container.parentNode) {
-                  container.parentNode.removeChild(container);
-                }
+                wrapper.removeChild(renderer.domElement);
               }
             };
           },
