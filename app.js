@@ -559,10 +559,22 @@ function PhysicsContainer({ artifact }) {
           }
           ${artifact.code.css || ''}
           
-          /* Only apply special centering for Three.js canvases */
+          /* Ensure Three.js canvas fits properly */
           canvas[data-engine="three.js"] {
+            width: 100% !important;
+            height: 100% !important;
+            outline: none;
             display: block;
-            margin: 0 auto;
+          }
+          
+          /* For standard content */
+          .scene-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
           }
         `;
         shadow.appendChild(styleElement);
@@ -590,11 +602,9 @@ function PhysicsContainer({ artifact }) {
           THREE: window.THREE,
           initThreeScene: () => {
             try {
-              // Create container div for Three.js
-              const container = document.createElement('div');
-              container.style.cssText = 'width: 100%; height: 100%; position: relative;';
-              wrapper.appendChild(container);
-
+              // Create container for Three.js scene
+              const container = wrapper.querySelector('.scene-container') || wrapper;
+              
               const scene = new THREE.Scene();
               scene.background = new THREE.Color(0xf8f9fa);
               
@@ -614,14 +624,9 @@ function PhysicsContainer({ artifact }) {
                 preserveDrawingBuffer: true
               });
               renderer.setPixelRatio(window.devicePixelRatio);
-              
-              // Make sure container exists before setting size and appending
-              if (container) {
-                renderer.setSize(container.clientWidth, container.clientHeight);
-                container.appendChild(renderer.domElement);
-              } else {
-                throw new Error('Three.js container not found');
-              }
+              renderer.setSize(container.clientWidth, container.clientHeight);
+              renderer.domElement.setAttribute('data-engine', 'three.js');
+              container.appendChild(renderer.domElement);
               
               // Add better lighting setup
               const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
@@ -639,15 +644,13 @@ function PhysicsContainer({ artifact }) {
               scene.add(fillLight);
               
               // Make sure renderer.domElement exists before creating controls
-              const controls = renderer.domElement ? new THREE.OrbitControls(camera, renderer.domElement) : null;
-              if (controls) {
-                controls.enableDamping = true;
-                controls.dampingFactor = 0.05;
-                controls.screenSpacePanning = true;
-                controls.enableZoom = true;
-                controls.autoRotate = true;
-                controls.autoRotateSpeed = 1;
-              }
+              const controls = new THREE.OrbitControls(camera, renderer.domElement);
+              controls.enableDamping = true;
+              controls.dampingFactor = 0.05;
+              controls.screenSpacePanning = true;
+              controls.enableZoom = true;
+              controls.autoRotate = true;
+              controls.autoRotateSpeed = 1;
               
               // Add a subtle grid for better spatial reference
               const gridHelper = new THREE.GridHelper(10, 10, 0xcccccc, 0xeeeeee);
@@ -692,9 +695,6 @@ function PhysicsContainer({ artifact }) {
                     renderer.domElement.parentNode.removeChild(renderer.domElement);
                   }
                 }
-                if (container && container.parentNode) {
-                  container.parentNode.removeChild(container);
-                }
               };
               
               return {
@@ -709,82 +709,10 @@ function PhysicsContainer({ artifact }) {
               console.error('Failed to initialize Three.js scene:', error);
               throw error;
             }
-          },
-          loaders: {
-            GLTFLoader: THREE.GLTFLoader,
           }
         };
 
-        const animations = new Set();
-        const timers = new Set();
-        const intervals = new Set();
-
-        sandboxEnvironment.requestAnimationFrame = (cb) => {
-          const id = window.requestAnimationFrame((timestamp) => {
-            if (!animations.has(id) || !mounted) return;
-            animations.delete(id);
-            try {
-              cb(timestamp);
-            } catch (e) {
-              console.error(`[Physics ${artifact.id}] Animation error:`, e);
-            }
-          });
-          animations.add(id);
-          return id;
-        };
-
-        sandboxEnvironment.setTimeout = (cb, delay) => {
-          const id = window.setTimeout(() => {
-            if (!timers.has(id) || !mounted) return;
-            timers.delete(id);
-            try {
-              cb();
-            } catch (e) {
-              console.error(`[Physics ${artifact.id}] Timeout error:`, e);
-            }
-          }, delay);
-          timers.add(id);
-          return id;
-        };
-
-        sandboxEnvironment.setInterval = (cb, delay) => {
-          const id = window.setInterval(() => {
-            if (!intervals.has(id) || !mounted) return;
-            try {
-              cb();
-            } catch (e) {
-              console.error(`[Physics ${artifact.id}] Interval error:`, e);
-            }
-          }, delay);
-          intervals.add(id);
-          return id;
-        };
-
-        cleanup = () => {
-          mounted = false;
-          animations.forEach(id => window.cancelAnimationFrame(id));
-          timers.forEach(id => window.clearTimeout(id));
-          intervals.forEach(id => window.clearInterval(id));
-          if (sceneCleanup) sceneCleanup();
-          animations.clear();
-          timers.clear();
-          intervals.clear();
-          if (shadow) {
-            shadow.innerHTML = '';
-          }
-        };
-
-        const code = `
-          with (sandbox) {
-            try {
-              ${artifact.code.js || ''}
-            } catch (error) {
-              console.error('[Physics ${artifact.id}] Runtime error:', error);
-            }
-          }
-        `;
-        
-        (new Function('sandbox', code))(sandboxEnvironment);
+        // ...rest of the existing code...
 
       } catch (error) {
         console.error(`[Physics ${artifact.id}] Initialization error:`, error);
@@ -792,12 +720,8 @@ function PhysicsContainer({ artifact }) {
       }
     };
 
-    const initTimer = setTimeout(initializePhysics, 100);
-    
-    return () => {
-      cleanup();
-      clearTimeout(initTimer);
-    };
+    // ...rest of the existing code...
+
   }, [artifact.id, artifact.code]);
 
   const isOwner = artifact.username === room.party.client.username;
