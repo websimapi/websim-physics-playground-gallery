@@ -183,46 +183,40 @@ function IterateModal({ isOpen, onClose, artifact }) {
     setIsSubmitting(true);
 
     try {
-      // First get the current iteration count by following the chain
+      // First find the iteration count for the current artifact
       let count = 0;
       let current = artifact;
-      const seen = new Set();
+      const visited = new Set();
       
-      while (current && !seen.has(current.id)) {
-        seen.add(current.id);
-        if (current.iteration_of) {
-          const parents = await room.collection('physics_artifact')
-            .filter({ id: current.iteration_of })
-            .getList();
-            
-          if (parents && parents.length > 0) {
-            current = parents[0];
-            count++;
-          } else {
-            break;
-          }
-        } else {
-          break;
-        }
+      while (current && current.iteration_of && !visited.has(current.iteration_of)) {
+        visited.add(current.iteration_of);
+        count++;
+        const parentArtifacts = await room.collection('physics_artifact')
+          .filter({ id: current.iteration_of })
+          .getList();
+        current = parentArtifacts[0];
       }
 
-      const basePrompt = `Improve and iterate on this existing physics demonstration. Make it more detailed, more interactive, or add new features while maintaining its core concept. This is iteration #${count + 1} of the original.
+      // The new iteration will be count + 1
+      const iterationNumber = count + 1;
 
-      Original demonstration:
-      Title: ${artifact.code.title}
-      Description: ${artifact.code.description}
-      Original Prompt: ${artifact.prompt}
-      ${suggestions ? `User suggestions: ${suggestions}` : 'Make it better/more detailed to the best of your ability'}
+      const basePrompt = `Improve and iterate on this existing physics demonstration (Iteration #${iterationNumber}). Make it more detailed, more interactive, or add new features while maintaining its core concept.
 
-      The response must be valid JSON matching this interface:
+Original demonstration:
+Title: ${artifact.code.title}
+Description: ${artifact.code.description}
+Original Prompt: ${artifact.prompt}
+${suggestions ? `User suggestions: ${suggestions}` : 'Make it better/more detailed to the best of your ability'}
 
-      interface PhysicsArtifact {
-        html: string;
-        css: string;
-        js: string;
-        title: string;
-        description: string;
-      }`;
+The response must be valid JSON matching this interface:
+
+interface PhysicsArtifact {
+  html: string;
+  css: string;
+  js: string;
+  title: string;
+  description: string;
+}`;
 
       const response = await fetch('/api/ai_completion', {
         method: 'POST',
@@ -246,9 +240,8 @@ function IterateModal({ isOpen, onClose, artifact }) {
         throw new Error('Invalid response format from AI');
       }
 
-      // Create the new iteration with the iteration_of field set
       await room.collection('physics_artifact').create({
-        prompt: `[Iteration ${count + 1}] ${artifact.prompt}${suggestions ? ` with suggestions: ${suggestions}` : ''}`,
+        prompt: `[Iteration #${iterationNumber}] ${artifact.prompt}${suggestions ? ` with suggestions: ${suggestions}` : ''}`,
         code: artifactCode,
         title: artifactCode.title,
         description: artifactCode.description,
@@ -314,38 +307,25 @@ function PhysicsContainer({ artifact }) {
   
   useEffect(() => {
     const countIterations = async () => {
-      try {
-        let count = 0;
-        let current = artifact;
-        const seen = new Set(); // To prevent infinite loops in case of circular references
-        
-        // Count backwards through the iteration chain
-        while (current && !seen.has(current.id)) {
-          // Mark this id as seen
-          seen.add(current.id);
-          
-          // If there's a parent iteration, get it and increment count
-          if (current.iteration_of) {
-            const parents = await room.collection('physics_artifact')
-              .filter({ id: current.iteration_of })
-              .getList();
-              
-            if (parents && parents.length > 0) {
-              current = parents[0];
-              count++;
-            } else {
-              break;
-            }
-          } else {
-            break;
-          }
+      let count = 0;
+      let current = artifact;
+      const visited = new Set(); // Prevent infinite loops
+      
+      // Keep following iteration_of chain until we hit the original
+      while (current && current.iteration_of && !visited.has(current.iteration_of)) {
+        visited.add(current.iteration_of);
+        count++;
+        try {
+          const parentArtifacts = await room.collection('physics_artifact')
+            .filter({ id: current.iteration_of })
+            .getList();
+          current = parentArtifacts[0];
+        } catch (error) {
+          console.error('Error counting iterations:', error);
+          break;
         }
-        
-        setIterationCount(count);
-      } catch (error) {
-        console.error('Error counting iterations:', error);
-        setIterationCount(0);
       }
+      setIterationCount(count);
     };
 
     countIterations();
@@ -481,7 +461,7 @@ function PhysicsContainer({ artifact }) {
             try {
               cb();
             } catch (e) {
-              console.error(`[Physics ${artifact.id}] Interval error:`, e);
+              console.error(`[Physics ${artifact.id")] Interval error:`, e);
             }
           }, delay);
           intervals.add(id);
