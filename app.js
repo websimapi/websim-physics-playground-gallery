@@ -585,33 +585,31 @@ function PhysicsContainer({ artifact }) {
             scene.add(gridHelper);
             
             // Handle resize
-            let resizeTimeout = null;
-            const handleResize = () => {
-              if (resizeTimeout) {
-                clearTimeout(resizeTimeout);
-              }
-              resizeTimeout = setTimeout(() => {
+            let resizeTimeoutId = null;
+            const debouncedResize = () => {
+              if (resizeTimeoutId) clearTimeout(resizeTimeoutId);
+              resizeTimeoutId = setTimeout(() => {
                 if (!mounted) return;
                 const width = wrapper.clientWidth;
                 const height = wrapper.clientHeight;
                 camera.aspect = width / height;
                 camera.updateProjectionMatrix();
                 renderer.setSize(width, height, false);
-              }, 100);
+              }, 250);
             };
-            
-            // Create ResizeObserver with debounced callback
-            resizeObserver = new ResizeObserver((entries) => {
+
+            resizeObserver = new ResizeObserver(() => {
               if (!mounted) return;
-              handleResize();
+              debouncedResize();
             });
             
             resizeObserver.observe(wrapper);
             
+            let isAnimating = true;
             let animationFrameId = null;
             
             function animate() {
-              if (!mounted) return;
+              if (!mounted || !isAnimating) return;
               animationFrameId = requestAnimationFrame(animate);
               controls.update();
               renderer.render(scene, camera);
@@ -619,20 +617,29 @@ function PhysicsContainer({ artifact }) {
             animate();
             
             sceneCleanup = () => {
+              isAnimating = false;
               if (animationFrameId) {
                 cancelAnimationFrame(animationFrameId);
               }
-              if (resizeTimeout) {
-                clearTimeout(resizeTimeout);
+              if (resizeTimeoutId) {
+                clearTimeout(resizeTimeoutId);
               }
-              if (resizeObserver) {
-                resizeObserver.disconnect();
-              }
+              resizeObserver.disconnect();
               controls.dispose();
               renderer.dispose();
               if (renderer.domElement && renderer.domElement.parentNode) {
                 renderer.domElement.parentNode.removeChild(renderer.domElement);
               }
+              scene.traverse((object) => {
+                if (object.geometry) object.geometry.dispose();
+                if (object.material) {
+                  if (Array.isArray(object.material)) {
+                    object.material.forEach(material => material.dispose());
+                  } else {
+                    object.material.dispose();
+                  }
+                }
+              });
             };
             
             return {
