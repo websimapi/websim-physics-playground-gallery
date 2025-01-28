@@ -122,178 +122,162 @@ function PhysicsContainer({ artifact }) {
 
   useEffect(() => {
     let cleanup = () => {};
+    let shadow = null;
     
-    // Wrap in try-catch to handle potential mounting errors
-    try {
-      if (!containerRef.current) return;
-
-      const container = containerRef.current;
-      const sandbox = container.querySelector('.physics-content');
-      
-      if (!sandbox) {
-        throw new Error('Could not find physics content container');
-      }
-
-      // Check if shadow root already exists and remove it
-      if (sandbox.shadowRoot) {
-        sandbox.innerHTML = '';
-        try {
-          sandbox.detachShadow();
-        } catch (e) {
-          // Some browsers might not support detachShadow
-          console.warn('Could not detach shadow root:', e);
-        }
-      }
-
-      // Create a new shadow root for isolation
-      const shadow = sandbox.attachShadow({ mode: 'closed' });
-      
-      // Create container for the physics content
-      const physicsContainer = document.createElement('div');
-      physicsContainer.id = sandboxId;
-      
-      // Add the HTML content
-      physicsContainer.innerHTML = artifact.code.html || '';
-      
-      // Add scoped styles
-      const style = document.createElement('style');
-      style.textContent = `
-        /* Reset styles within shadow DOM */
-        :host {
-          all: initial;
-          display: block;
-          position: relative;
-          width: 100%;
-          height: 100%;
-          contain: content;
-        }
-        /* Default safety styles */
-        div {
-          position: relative;
-          max-width: 100%;
-        }
-        ${artifact.code.css || ''}
-      `;
-      
-      // Append style and content to shadow root
-      shadow.appendChild(style);
-      shadow.appendChild(physicsContainer);
-      
-      // Create and add the script in a safe way
-      const script = document.createElement('script');
-      const safeId = String(artifact.id).replace(/[^\w-]/g, '');
-      
-      script.textContent = `
-        (function() {
-          try {
-            const root = document.currentScript.parentElement;
-            const container = root.getElementById('${sandboxId}');
-            
-            if (!container) {
-              throw new Error('Container not found');
-            }
-
-            // Utility functions for selecting elements within this shadow DOM only
-            const getElement = (selector) => container.querySelector(selector);
-            const getElements = (selector) => container.querySelectorAll(selector);
-            
-            // Sandbox console logs
-            const sandboxConsole = {
-              log: function() {
-                console.log('[Physics ' + '${safeId}' + ']:', ...Array.from(arguments));
-              },
-              error: function() {
-                console.error('[Physics ' + '${safeId}' + ']:', ...Array.from(arguments));
-              },
-              warn: function() {
-                console.warn('[Physics ' + '${safeId}' + ']:', ...Array.from(arguments));
-              }
-            };
-
-            // Animation frame and timeout tracking for cleanup
-            let activeAnimationFrames = new Set();
-            let activeTimeouts = new Set();
-
-            // Create a sandboxed environment
-            const sandbox = {
-              console: sandboxConsole,
-              container,
-              getElement,
-              getElements,
-              requestAnimationFrame: (cb) => {
-                const id = window.requestAnimationFrame((timestamp) => {
-                  activeAnimationFrames.delete(id);
-                  cb(timestamp);
-                });
-                activeAnimationFrames.add(id);
-                return id;
-              },
-              cancelAnimationFrame: (id) => {
-                activeAnimationFrames.delete(id);
-                window.cancelAnimationFrame(id);
-              },
-              setTimeout: (cb, delay) => {
-                const id = window.setTimeout(() => {
-                  activeTimeouts.delete(id);
-                  cb();
-                }, delay);
-                activeTimeouts.add(id);
-                return id;
-              },
-              clearTimeout: (id) => {
-                activeTimeouts.delete(id);
-                window.clearTimeout(id);
-              },
-              Math: Object.create(Math)
-            };
-
-            // Run the physics code in the sandbox
-            with (sandbox) {
-              (function() {
-                ${artifact.code.js || ''}
-              })();
-            }
-
-            // Set up cleanup function
-            root.cleanup = function() {
-              activeAnimationFrames.forEach(id => window.cancelAnimationFrame(id));
-              activeTimeouts.forEach(id => window.clearTimeout(id));
-              activeAnimationFrames.clear();
-              activeTimeouts.clear();
-            };
-          } catch (error) {
-            console.error('[Physics ${safeId}] Error:', error);
-          }
-        })();
-      `;
-      
-      shadow.appendChild(script);
-
-      // Store cleanup function
-      cleanup = () => {
-        if (sandbox.shadowRoot) {
-          try {
-            if (shadow.querySelector('script')?.cleanup) {
-              shadow.querySelector('script').cleanup();
-            }
-            sandbox.innerHTML = '';
-          } catch (e) {
-            console.warn('Cleanup error:', e);
-          }
-        }
-      };
-    } catch (error) {
-      console.error('Mount error:', error);
-      setMountError(error.message);
-    }
-
-    // Return cleanup function
-    return () => {
+    const initializePhysics = () => {
       try {
-        cleanup();
-      } catch (e) {
-        console.warn('Cleanup error:', e);
+        if (!containerRef.current) return;
+
+        const container = containerRef.current;
+        const sandbox = container.querySelector('.physics-content');
+        
+        if (!sandbox) {
+          throw new Error('Could not find physics content container');
+        }
+
+        // Remove any existing shadow root
+        if (sandbox.shadowRoot) {
+          cleanup();
+          sandbox.innerHTML = '';
+        }
+
+        // Create new shadow root
+        shadow = sandbox.attachShadow({ mode: 'open' });
+        
+        // Create and setup the physics container
+        const physicsContainer = document.createElement('div');
+        physicsContainer.id = sandboxId;
+        physicsContainer.innerHTML = artifact.code.html || '';
+        
+        // Add styles
+        const style = document.createElement('style');
+        style.textContent = `
+          :host {
+            all: initial;
+            display: block;
+            position: relative;
+            width: 100%;
+            height: 100%;
+            contain: content;
+          }
+          div {
+            position: relative;
+            max-width: 100%;
+          }
+          ${artifact.code.css || ''}
+        `;
+        
+        shadow.appendChild(style);
+        shadow.appendChild(physicsContainer);
+        
+        // Create isolated script context
+        const scriptContent = `
+          (() => {
+            try {
+              // Get container reference safely
+              const container = document.getElementById('${sandboxId}');
+              if (!container) throw new Error('Container not found');
+              
+              // Track animation frames and timeouts
+              const activeAnimationFrames = new Set();
+              const activeTimeouts = new Set();
+              
+              // Create sandbox environment
+              const sandbox = {
+                console: {
+                  log: (...args) => console.log('[Physics ${artifact.id}]:', ...args),
+                  error: (...args) => console.error('[Physics ${artifact.id}]:', ...args),
+                  warn: (...args) => console.warn('[Physics ${artifact.id}]:', ...args)
+                },
+                container,
+                getElement: (selector) => container.querySelector(selector),
+                getElements: (selector) => container.querySelectorAll(selector),
+                requestAnimationFrame: (cb) => {
+                  const id = window.requestAnimationFrame((timestamp) => {
+                    activeAnimationFrames.delete(id);
+                    try {
+                      cb(timestamp);
+                    } catch (e) {
+                      console.error('[Physics ${artifact.id}] Animation error:', e);
+                    }
+                  });
+                  activeAnimationFrames.add(id);
+                  return id;
+                },
+                cancelAnimationFrame: (id) => {
+                  activeAnimationFrames.delete(id);
+                  window.cancelAnimationFrame(id);
+                },
+                setTimeout: (cb, delay) => {
+                  const id = window.setTimeout(() => {
+                    activeTimeouts.delete(id);
+                    try {
+                      cb();
+                    } catch (e) {
+                      console.error('[Physics ${artifact.id}] Timeout error:', e);
+                    }
+                  }, delay);
+                  activeTimeouts.add(id);
+                  return id;
+                },
+                clearTimeout: (id) => {
+                  activeTimeouts.delete(id);
+                  window.clearTimeout(id);
+                },
+                Math: Object.create(Math)
+              };
+
+              // Store cleanup function
+              container.cleanup = () => {
+                activeAnimationFrames.forEach(id => window.cancelAnimationFrame(id));
+                activeTimeouts.forEach(id => window.clearTimeout(id));
+                activeAnimationFrames.clear();
+                activeTimeouts.clear();
+              };
+
+              // Run physics code in sandbox
+              with (sandbox) {
+                ${artifact.code.js || ''}
+              }
+            } catch (error) {
+              console.error('[Physics ${artifact.id}] Initialization error:', error);
+            }
+          })();
+        `;
+
+        const script = document.createElement('script');
+        script.textContent = scriptContent;
+        shadow.appendChild(script);
+
+        cleanup = () => {
+          try {
+            if (shadow) {
+              const container = shadow.getElementById(sandboxId);
+              if (container && container.cleanup) {
+                container.cleanup();
+              }
+              
+              // Remove all children from shadow root
+              while (shadow.firstChild) {
+                shadow.removeChild(shadow.firstChild);
+              }
+            }
+          } catch (e) {
+            console.warn('[Physics ${artifact.id}] Cleanup error:', e);
+          }
+        };
+      } catch (error) {
+        console.error('[Physics ${artifact.id}] Mount error:', error);
+        setMountError(error.message);
       }
+    };
+
+    // Initialize physics with a small delay to ensure DOM is ready
+    const initTimer = setTimeout(initializePhysics, 0);
+
+    return () => {
+      clearTimeout(initTimer);
+      cleanup();
     };
   }, [artifact.id, artifact.code]);
 
