@@ -168,8 +168,8 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
             )}
           </div>
         </div>
+      </div>
     </div>
-  </div>
   );
 }
 
@@ -286,7 +286,33 @@ function PhysicsContainer({ artifact }) {
   const [mountError, setMountError] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isIterateModalOpen, setIsIterateModalOpen] = useState(false);
+  const [iterationCount, setIterationCount] = useState(0);
   
+  useEffect(() => {
+    const countIterations = async () => {
+      let count = 0;
+      let current = artifact;
+      const visited = new Set(); // Prevent infinite loops if data is corrupted
+      
+      while (current && current.iteration_of && !visited.has(current.iteration_of)) {
+        visited.add(current.iteration_of);
+        count++;
+        try {
+          const parentArtifacts = await room.collection('physics_artifact')
+            .filter({ id: current.iteration_of })
+            .getList();
+          current = parentArtifacts[0];
+        } catch (error) {
+          console.error('Error counting iterations:', error);
+          break;
+        }
+      }
+      setIterationCount(count);
+    };
+
+    countIterations();
+  }, [artifact]);
+
   const handleDelete = async (e) => {
     e.preventDefault();  
     e.stopPropagation(); 
@@ -498,6 +524,9 @@ function PhysicsContainer({ artifact }) {
         >
           ⤢
         </button>
+        <div className="iteration-badge" title={`Iteration #${iterationCount}`}>
+          {iterationCount}
+        </div>
         <div className="physics-content">
           {mountError && (
             <div className="error">
