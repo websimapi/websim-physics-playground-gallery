@@ -864,16 +864,16 @@ function PhysicsContainer({ artifact }) {
           </div>
         </div>
       </div>
-      <FullscreenModal 
-        isOpen={isFullscreen}
-        onClose={() => setIsFullscreen(false)}
-        artifact={artifact}
-      />
-      <IterateModal
-        isOpen={isIterateModalOpen}
-        onClose={() => setIsIterateModalOpen(false)}
-        artifact={artifact}
-      />
+    <FullscreenModal 
+      isOpen={isFullscreen}
+      onClose={() => setIsFullscreen(false)}
+      artifact={artifact}
+    />
+    <IterateModal
+      isOpen={isIterateModalOpen}
+      onClose={() => setIsIterateModalOpen(false)}
+      artifact={artifact}
+    />
     </>
   );
 }
@@ -909,7 +909,7 @@ function PhysicsPlayground() {
           The Three.js library (with OrbitControls, GLTFLoader) and CANNON.js are already loaded.
           
           You can initialize a Three.js scene using the provided initThreeScene() helper:
-          const { scene, camera, renderer, controls, dispose } = initThreeScene();
+          const { scene, camera, renderer, controls } = initThreeScene();
           
           For physics with CANNON.js, you can use it directly via the CANNON global:
           const world = new CANNON.World();
@@ -919,58 +919,56 @@ function PhysicsPlayground() {
           {
             "html": "<div class='scene-container'></div>",
             "css": ".scene-container { width: 100%; height: 100%; }",
-            "js": `
-              const { scene, camera, renderer, controls } = initThreeScene();
-              camera.position.set(0, 5, 10);
-              
-              // Physics world
-              const world = new CANNON.World();
-              world.gravity.set(0, -9.82, 0);
-              
-              // Create a ground plane
-              const groundBody = new CANNON.Body({
-                mass: 0,
-                shape: new CANNON.Plane()
-              });
-              groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI/2);
-              world.addBody(groundBody);
-              
-              // Create a sphere
-              const radius = 1;
-              const sphereBody = new CANNON.Body({
-                mass: 5,
-                shape: new CANNON.Sphere(radius)
-              });
-              sphereBody.position.set(0, 10, 0);
-              world.addBody(sphereBody);
-              
-              // Visual sphere
-              const sphereGeometry = new THREE.SphereGeometry(radius);
-              const sphereMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
-              const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
-              scene.add(sphereMesh);
-              
-              // Visual ground
-              const groundGeometry = new THREE.PlaneGeometry(20, 20);
-              const groundMaterial = new THREE.MeshPhongMaterial({ color: 0xcccccc });
-              const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
-              groundMesh.rotation.x = -Math.PI/2;
-              scene.add(groundMesh);
-              
-              function animate() {
-                requestAnimationFrame(animate);
-                
-                // Step the physics world
-                world.step(1/60);
-                
-                // Copy coordinates from CANNON to Three.js
-                sphereMesh.position.copy(sphereBody.position);
-                sphereMesh.quaternion.copy(sphereBody.quaternion);
-                
-                renderer.render(scene, camera);
-              }
-              animate();
-            `
+            "js": "const { scene, camera, renderer, controls } = initThreeScene();\\n\\
+                  camera.position.set(0, 5, 10);\\n\\
+                  \\n\\
+                  // Physics world\\n\\
+                  const world = new CANNON.World();\\n\\
+                  world.gravity.set(0, -9.82, 0);\\n\\
+                  \\n\\
+                  // Create a ground plane\\n\\
+                  const groundBody = new CANNON.Body({\\n\\
+                    mass: 0,\\n\\
+                    shape: new CANNON.Plane()\\n\\
+                  });\\n\\
+                  groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI/2);\\n\\
+                  world.addBody(groundBody);\\n\\
+                  \\n\\
+                  // Create a sphere\\n\\
+                  const radius = 1;\\n\\
+                  const sphereBody = new CANNON.Body({\\n\\
+                    mass: 5,\\n\\
+                    shape: new CANNON.Sphere(radius)\\n\\
+                  });\\n\\
+                  sphereBody.position.set(0, 10, 0);\\n\\
+                  world.addBody(sphereBody);\\n\\
+                  \\n\\
+                  // Visual sphere\\n\\
+                  const sphereGeometry = new THREE.SphereGeometry(radius);\\n\\
+                  const sphereMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });\\n\\
+                  const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);\\n\\
+                  scene.add(sphereMesh);\\n\\
+                  \\n\\
+                  // Visual ground\\n\\
+                  const groundGeometry = new THREE.PlaneGeometry(20, 20);\\n\\
+                  const groundMaterial = new THREE.MeshPhongMaterial({ color: 0xcccccc });\\n\\
+                  const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);\\n\\
+                  groundMesh.rotation.x = -Math.PI/2;\\n\\
+                  scene.add(groundMesh);\\n\\
+                  \\n\\
+                  function animate() {\\n\\
+                    requestAnimationFrame(animate);\\n\\
+                    \\n\\
+                    // Step the physics world\\n\\
+                    world.step(1/60);\\n\\
+                    \\n\\
+                    // Copy coordinates from CANNON to Three.js\\n\\
+                    sphereMesh.position.copy(sphereBody.position);\\n\\
+                    sphereMesh.quaternion.copy(sphereBody.quaternion);\\n\\
+                    \\n\\
+                    renderer.render(scene, camera);\\n\\
+                  }\\n\\
+                  animate();",
             "title": "Bouncing Ball Physics",
             "description": "A demonstration of gravity and collision physics using CANNON.js with Three.js visualization"
           }
@@ -987,6 +985,7 @@ function PhysicsPlayground() {
 
           The code should leverage Three.js for 3D graphics and CANNON.js for physics where appropriate.
           Ensure all code is properly escaped for JSON.
+          Ensure JavaScript strings are escaped with \\n\\ for newlines and properly escaped quotes.
           
           Create a physics demonstration for: ${prompt}`,
           data: prompt
