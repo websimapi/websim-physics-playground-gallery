@@ -887,6 +887,49 @@ function PhysicsPlayground() {
     setError(null);
 
     try {
+      const basePrompt = `Create an interactive physics demonstration or simulation based on the following prompt. 
+      You have access to Three.js for 3D graphics and physics simulations. The Three.js library and its common addons (OrbitControls, GLTFLoader) are already loaded.
+
+      You can initialize a Three.js scene using the provided initThreeScene() helper:
+      const { scene, camera, renderer, controls, dispose } = initThreeScene();
+
+      The response must be valid JSON matching this interface:
+
+      interface PhysicsArtifact {
+        html: string;      // The HTML code for the demonstration
+        css: string;       // The CSS styles for the demonstration
+        js: string;        // The JavaScript code for the demonstration
+        title: string;     // A short title describing the demonstration
+        description: string; // A longer description explaining the physics concept
+      }
+
+      Example Three.js usage:
+      {
+        "html": "<div class='scene-container'></div>",
+        "css": ".scene-container { width: 100%; height: 100%; }",
+        "js": "const { scene, camera, renderer, controls } = initThreeScene();
+              camera.position.z = 5;
+              const geometry = new THREE.BoxGeometry();
+              const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
+              const cube = new THREE.Mesh(geometry, material);
+              scene.add(cube);
+              
+              function animate() {
+                requestAnimationFrame(animate);
+                cube.rotation.x += 0.01;
+                cube.rotation.y += 0.01;
+                renderer.render(scene, camera);
+              }
+              animate();",
+        "title": "Rotating 3D Cube",
+        "description": "A simple demonstration of 3D graphics using Three.js"
+      }
+
+      The code should leverage Three.js for 3D graphics and physics where appropriate.
+      Ensure all code is properly escaped for JSON.
+
+      Create a physics demonstration for: ${prompt}`;
+
       const response = await fetch('/api/ai_completion', {
         method: 'POST',
         headers: {
@@ -894,51 +937,10 @@ function PhysicsPlayground() {
           'Accept': 'application/json',
         },
         body: JSON.stringify({
-          prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
-          You have access to Three.js for 3D graphics and physics simulations. The Three.js library and its common addons (OrbitControls, GLTFLoader) are already loaded.
-          
-          You can initialize a Three.js scene using the provided initThreeScene() helper:
-          const { scene, camera, renderer, controls, dispose } = initThreeScene();
-          
-          The response must be valid JSON matching this interface:
-
-          interface PhysicsArtifact {
-            html: string;      // The HTML code for the demonstration
-            css: string;       // The CSS styles for the demonstration
-            js: string;        // The JavaScript code for the demonstration
-            title: string;     // A short title describing the demonstration
-            description: string; // A longer description explaining the physics concept
-          }
-
-          Example Three.js usage:
-          {
-            "html": "<div class='scene-container'></div>",
-            "css": ".scene-container { width: 100%; height: 100%; }",
-            "js": "const { scene, camera, renderer, controls } = initThreeScene();
-                  camera.position.z = 5;
-                  const geometry = new THREE.BoxGeometry();
-                  const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
-                  const cube = new THREE.Mesh(geometry, material);
-                  scene.add(cube);
-                  
-                  function animate() {
-                    requestAnimationFrame(animate);
-                    cube.rotation.x += 0.01;
-                    cube.rotation.y += 0.01;
-                    renderer.render(scene, camera);
-                  }
-                  animate();",
-            "title": "Rotating 3D Cube",
-            "description": "A simple demonstration of 3D graphics using Three.js"
-          }
-
-          The code should leverage Three.js for 3D graphics and physics where appropriate.
-          Ensure all code is properly escaped for JSON.
-          
-          Create a physics demonstration for: ${prompt}`,
+          prompt: basePrompt,
           data: prompt
         }),
-      );
+      });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
