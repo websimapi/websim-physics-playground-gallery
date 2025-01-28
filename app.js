@@ -117,6 +117,7 @@ function PhysicsContainer({ artifact }) {
   const room = new WebsimSocket();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const sandboxId = `physics-sandbox-${artifact.id}`;
 
   const handleDelete = async () => {
     if (!window.confirm('Are you sure you want to delete this physics artifact?')) return;
@@ -135,7 +136,6 @@ function PhysicsContainer({ artifact }) {
   // Check if the current user is the creator of this artifact
   const isOwner = artifact.username === room.party.client.username;
 
-  // Format the date in a more readable way
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     return new Intl.DateTimeFormat('default', {
@@ -153,17 +153,48 @@ function PhysicsContainer({ artifact }) {
     const container = containerRef.current;
     const sandbox = container.querySelector('.physics-content');
     
-    // Create a safe sandbox for the physics simulation
-    sandbox.innerHTML = artifact.code.html;
+    // Create a unique namespace for this physics simulation
+    const uniquePrefix = `physics_${artifact.id}_`;
     
-    // Add styles
+    // Modify the code to use scoped class names
+    let modifiedHtml = artifact.code.html.replace(/class="([^"]+)"/g, (match, className) => {
+      return `class="${uniquePrefix}${className}"`;
+    });
+    modifiedHtml = modifiedHtml.replace(/id="([^"]+)"/g, (match, id) => {
+      return `id="${uniquePrefix}${id}"`;
+    });
+
+    // Modify CSS to scope all selectors
+    let modifiedCss = artifact.code.css.replace(/([^\n,{]+)(?=[,{])/g, (selector) => {
+      // Don't prefix if it's already prefixed or if it's a special selector
+      if (selector.includes(uniquePrefix) || selector.trim().startsWith('@') || selector.trim().startsWith('from') || selector.trim().startsWith('to')) {
+        return selector;
+      }
+      return `.${uniquePrefix}${selector.trim()}`;
+    });
+
+    // Modify JavaScript to use scoped selectors and wrap in IIFE
+    let modifiedJs = `
+      (function() {
+        const container = document.getElementById('${sandboxId}');
+        const getElement = (selector) => container.querySelector('.${uniquePrefix}' + selector);
+        const getElements = (selector) => container.querySelectorAll('.${uniquePrefix}' + selector);
+        ${artifact.code.js}
+      })();
+    `;
+
+    // Set up the sandbox with scoped content
+    sandbox.id = sandboxId;
+    sandbox.innerHTML = modifiedHtml;
+    
+    // Add scoped styles
     const style = document.createElement('style');
-    style.textContent = artifact.code.css;
+    style.textContent = modifiedCss;
     sandbox.appendChild(style);
     
-    // Add and execute JavaScript
+    // Add and execute scoped JavaScript
     const script = document.createElement('script');
-    script.textContent = artifact.code.js;
+    script.textContent = modifiedJs;
     sandbox.appendChild(script);
 
     return () => {

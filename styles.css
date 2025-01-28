@@ -66,6 +66,8 @@ button:disabled {
 }
 
 .physics-content {
+  position: relative;
+  isolation: isolate;
   padding: 20px;
   border-bottom: 1px solid #eee;
   min-height: 200px;
