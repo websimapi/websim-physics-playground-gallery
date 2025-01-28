@@ -72,6 +72,7 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
           },
           Math: Object.create(Math),
           THREE: window.THREE,
+          CANNON: window.CANNON,
           initThreeScene: () => {
             const scene = new THREE.Scene();
             scene.background = new THREE.Color(0xf8f9fa);
@@ -574,6 +575,7 @@ function PhysicsContainer({ artifact }) {
           },
           Math: Object.create(Math),
           THREE: window.THREE,
+          CANNON: window.CANNON,
           initThreeScene: () => {
             const scene = new THREE.Scene();
             scene.background = new THREE.Color(0xf8f9fa);
@@ -903,11 +905,76 @@ function PhysicsPlayground() {
         },
         body: JSON.stringify({
           prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
-          You have access to Three.js for 3D graphics and physics simulations. The Three.js library and its common addons (OrbitControls, GLTFLoader) are already loaded.
+          You have access to Three.js for 3D graphics and CANNON.js for physics simulations. 
+          The Three.js library (with OrbitControls, GLTFLoader) and CANNON.js are already loaded.
           
           You can initialize a Three.js scene using the provided initThreeScene() helper:
           const { scene, camera, renderer, controls, dispose } = initThreeScene();
           
+          For physics with CANNON.js, you can use it directly via the CANNON global:
+          const world = new CANNON.World();
+          world.gravity.set(0, -9.82, 0);
+          
+          Example with Three.js and CANNON.js:
+          {
+            "html": "<div class='scene-container'></div>",
+            "css": ".scene-container { width: 100%; height: 100%; }",
+            "js": `
+              const { scene, camera, renderer, controls } = initThreeScene();
+              camera.position.set(0, 5, 10);
+              
+              // Physics world
+              const world = new CANNON.World();
+              world.gravity.set(0, -9.82, 0);
+              
+              // Create a ground plane
+              const groundBody = new CANNON.Body({
+                mass: 0,
+                shape: new CANNON.Plane()
+              });
+              groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI/2);
+              world.addBody(groundBody);
+              
+              // Create a sphere
+              const radius = 1;
+              const sphereBody = new CANNON.Body({
+                mass: 5,
+                shape: new CANNON.Sphere(radius)
+              });
+              sphereBody.position.set(0, 10, 0);
+              world.addBody(sphereBody);
+              
+              // Visual sphere
+              const sphereGeometry = new THREE.SphereGeometry(radius);
+              const sphereMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+              const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
+              scene.add(sphereMesh);
+              
+              // Visual ground
+              const groundGeometry = new THREE.PlaneGeometry(20, 20);
+              const groundMaterial = new THREE.MeshPhongMaterial({ color: 0xcccccc });
+              const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
+              groundMesh.rotation.x = -Math.PI/2;
+              scene.add(groundMesh);
+              
+              function animate() {
+                requestAnimationFrame(animate);
+                
+                // Step the physics world
+                world.step(1/60);
+                
+                // Copy coordinates from CANNON to Three.js
+                sphereMesh.position.copy(sphereBody.position);
+                sphereMesh.quaternion.copy(sphereBody.quaternion);
+                
+                renderer.render(scene, camera);
+              }
+              animate();
+            `
+            "title": "Bouncing Ball Physics",
+            "description": "A demonstration of gravity and collision physics using CANNON.js with Three.js visualization"
+          }
+
           The response must be valid JSON matching this interface:
 
           interface PhysicsArtifact {
@@ -918,29 +985,7 @@ function PhysicsPlayground() {
             description: string; // A longer description explaining the physics concept
           }
 
-          Example Three.js usage:
-          {
-            "html": "<div class='scene-container'></div>",
-            "css": ".scene-container { width: 100%; height: 100%; }",
-            "js": "const { scene, camera, renderer, controls } = initThreeScene();
-                  camera.position.z = 5;
-                  const geometry = new THREE.BoxGeometry();
-                  const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
-                  const cube = new THREE.Mesh(geometry, material);
-                  scene.add(cube);
-                  
-                  function animate() {
-                    requestAnimationFrame(animate);
-                    cube.rotation.x += 0.01;
-                    cube.rotation.y += 0.01;
-                    renderer.render(scene, camera);
-                  }
-                  animate();",
-            "title": "Rotating 3D Cube",
-            "description": "A simple demonstration of 3D graphics using Three.js"
-          }
-
-          The code should leverage Three.js for 3D graphics and physics where appropriate.
+          The code should leverage Three.js for 3D graphics and CANNON.js for physics where appropriate.
           Ensure all code is properly escaped for JSON.
           
           Create a physics demonstration for: ${prompt}`,
