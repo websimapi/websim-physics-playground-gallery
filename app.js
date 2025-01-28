@@ -291,42 +291,54 @@ function PhysicsContainer({ artifact }) {
   
   useEffect(() => {
     const countIterations = async () => {
-      const iterations = [];
-      let current = artifact;
-      const visited = new Set(); // Prevent infinite loops
+      try {
+        // Get all artifacts that are iterations of this artifact or in its ancestry chain
+        const allArtifacts = await room.collection('physics_artifact').getList();
+        const iterationChain = new Set();
+        let currentId = artifact.id;
+        
+        // Keep track of visited IDs to prevent infinite loops
+        const visited = new Set();
 
-      // First add the current artifact to track its position in the chain
-      iterations.push(current.id);
-      
-      // Keep following iteration_of references until we reach the original
-      while (current && current.iteration_of && !visited.has(current.iteration_of)) {
-        visited.add(current.iteration_of);
-        iterations.push(current.iteration_of);
-        try {
-          const parentArtifacts = await room.collection('physics_artifact')
-            .filter({ id: current.iteration_of })
-            .getList();
-          if (parentArtifacts && parentArtifacts.length > 0) {
-            current = parentArtifacts[0];
+        // Build the full iteration chain from current artifact back to the original
+        while (currentId && !visited.has(currentId)) {
+          visited.add(currentId);
+          iterationChain.add(currentId);
+          
+          // Find the current artifact in our list
+          const current = allArtifacts.find(a => a.id === currentId);
+          if (current && current.iteration_of) {
+            currentId = current.iteration_of;
           } else {
             break;
           }
-        } catch (error) {
-          console.error('Error counting iterations:', error);
-          break;
         }
-      }
 
-      // The iteration count is the position from the original (last in chain)
-      // So we reverse the array and find the current artifact's position
-      const reversedIterations = iterations.reverse();
-      const position = reversedIterations.indexOf(artifact.id);
-      // Add 1 since we want to display iteration numbers starting from 1
-      setIterationCount(position + 1);
+        // Find all artifacts that are iterations of any artifact in our chain
+        for (const chainId of iterationChain) {
+          const children = allArtifacts.filter(a => a.iteration_of === chainId);
+          children.forEach(child => iterationChain.add(child.id));
+        }
+
+        // Convert to array and sort by creation date to get the proper sequence
+        const chainArray = Array.from(iterationChain)
+          .map(id => allArtifacts.find(a => a.id === id))
+          .filter(a => a) // Remove any undefined entries
+          .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+        // Find the index of our current artifact in the sequence
+        const position = chainArray.findIndex(a => a.id === artifact.id);
+        
+        // Add 1 since we want to display iteration numbers starting from 1
+        setIterationCount(position + 1);
+      } catch (error) {
+        console.error('Error counting iterations:', error);
+        setIterationCount(1); // Fallback to 1 if there's an error
+      }
     };
 
     countIterations();
-  }, [artifact]);
+  }, [artifact, room]);
 
   const handleDelete = async (e) => {
     e.preventDefault();  
