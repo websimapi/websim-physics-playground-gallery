@@ -284,7 +284,7 @@ function FullscreenModal({ isOpen, onClose, artifact, onUpdateZoom }) {
               </div>
             )}
           </div>
-          <button className="fullscreen-close" onClick={onClose}>&times;</button>
+�          <button className="fullscreen-close" onClick={onClose}>&times;</button>
         </div>
         <div className="fullscreen-body">
           <div className="physics-content">
@@ -1003,4 +1003,5 @@ function PhysicsPlayground() {
   );
 }
 
-ReactDOM.render(<PhysicsPlayground />, document.getElementById('root'));
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<PhysicsPlayground />);
