@@ -58,34 +58,17 @@ button:disabled {
 }
 
 .physics-container {
+  position: relative;
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   overflow: hidden;
 }
 
-.physics-container-header {
-  padding: 15px 20px;
-  border-bottom: 1px solid #eee;
-}
-
-.physics-container-header h3 {
-  margin: 0 0 8px 0;
-  font-size: 18px;
-  color: #1a73e8;
-}
-
-.physics-container-header p {
-  margin: 0;
-  font-size: 14px;
-  color: #666;
-}
-
 .physics-content {
   padding: 20px;
   border-bottom: 1px solid #eee;
   min-height: 200px;
-  position: relative;
 }
 
 .physics-meta {
@@ -94,8 +77,6 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 14px;
-  color: #666;
 }
 
 .avatar {
@@ -109,7 +90,6 @@ button:disabled {
   padding: 20px;
   font-style: italic;
   color: #666;
-  grid-column: 1 / -1;
 }
 
 .error {
@@ -118,4 +98,28 @@ button:disabled {
   margin: 10px 0;
   background: #ffebee;
   border-radius: 4px;
+}
+
+.delete-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #ff4444;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+  border: none;
+  padding: 0;
+}
+
+.delete-button:hover {
+  opacity: 1;
+  background: #cc0000;
 }

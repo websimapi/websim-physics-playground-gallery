@@ -29,47 +29,16 @@ function PhysicsPlayground() {
         },
         body: JSON.stringify({
           prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
-          The response should be valid JSON containing HTML, CSS, and JavaScript code that demonstrates the physics concept.
-          The JavaScript code should be written to work within a setup function.
-          
-          interface Response {
-            html: string;
-            css: string;
-            js: string;
-            title: string;
-            description: string;
-          }
-          
-          Example response:
-          {
-            "html": "<div class='simulation'><svg viewBox='0 0 400 300'><circle cx='200' cy='150' r='20' class='ball'></circle></svg></div>",
-            "css": ".simulation { width: 100%; height: 100%; } .ball { fill: blue; }",
-            "js": "let ball = container.querySelector('.ball'); let velocity = 0; function animate() { velocity += 0.5; let cy = parseFloat(ball.getAttribute('cy')); ball.setAttribute('cy', cy + velocity); if (cy > 280) { velocity = -velocity * 0.8; } requestAnimationFrame(animate); } animate();",
-            "title": "Bouncing Ball",
-            "description": "Simple gravity simulation with a bouncing ball"
-          }
-
-          Make the response a valid JSON object matching the interface above.
+          Respond with HTML, CSS, and JavaScript code that demonstrates the physics concept.
           The code should be self-contained and use SVG for graphics where possible.
-          All JavaScript code should be executable when passed into the setup function scope.
-          Avoid using 'let' or 'const' declarations at the top level - all variables should be declared inside functions.
           
           Prompt: ${prompt}`,
           data: prompt
         }),
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
       const artifactCode = await response.json();
       
-      // Validate the response has the required fields
-      if (!artifactCode.html || !artifactCode.css || !artifactCode.js || !artifactCode.title || !artifactCode.description) {
-        throw new Error('Invalid response format from AI');
-      }
-
       // Store the artifact in the database
       await room.collection('physics_artifact').create({
         prompt,
@@ -80,8 +49,8 @@ function PhysicsPlayground() {
 
       setPrompt('');
     } catch (err) {
-      console.error('Error details:', err);
       setError('Failed to create physics simulation. Please try again.');
+      console.error(err);
     } finally {
       setIsSubmitting(false);
     }
@@ -108,15 +77,9 @@ function PhysicsPlayground() {
       </div>
 
       <div className="gallery">
-        {artifacts.length === 0 ? (
-          <div className="loading">No physics simulations yet. Create the first one!</div>
-        ) : (
-          artifacts
-            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-            .map(artifact => (
-              <PhysicsContainer key={artifact.id} artifact={artifact} />
-            ))
-        )}
+        {artifacts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(artifact => (
+          <PhysicsContainer key={artifact.id} artifact={artifact} />
+        ))}
       </div>
     </div>
   );
@@ -124,6 +87,25 @@ function PhysicsPlayground() {
 
 function PhysicsContainer({ artifact }) {
   const containerRef = React.useRef();
+  const room = new WebsimSocket();
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!window.confirm('Are you sure you want to delete this physics artifact?')) return;
+    
+    setIsDeleting(true);
+    try {
+      await room.collection('physics_artifact').delete(artifact.id);
+    } catch (error) {
+      console.error('Failed to delete artifact:', error);
+      alert('Failed to delete artifact. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Check if the current user is the creator of this artifact
+  const isOwner = artifact.username === room.party.client.username;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -131,45 +113,36 @@ function PhysicsContainer({ artifact }) {
     const container = containerRef.current;
     const sandbox = container.querySelector('.physics-content');
     
-    try {
-      // Clear previous content
-      sandbox.innerHTML = '';
-      
-      // Create a style element
-      const style = document.createElement('style');
-      style.textContent = artifact.code.css;
-      
-      // Create the HTML content wrapper
-      const content = document.createElement('div');
-      content.innerHTML = artifact.code.html;
-      
-      // Append style and content
-      sandbox.appendChild(style);
-      sandbox.appendChild(content);
-      
-      // Create and execute the physics code
-      const setupFunction = new Function('container', artifact.code.js);
-      setupFunction(sandbox);
-      
-    } catch (error) {
-      console.error('Error setting up physics container:', error);
-      sandbox.innerHTML = '<div class="error">Error loading simulation</div>';
-    }
+    // Create a safe sandbox for the physics simulation
+    sandbox.innerHTML = artifact.code.html;
+    
+    // Add styles
+    const style = document.createElement('style');
+    style.textContent = artifact.code.css;
+    sandbox.appendChild(style);
+    
+    // Add and execute JavaScript
+    const script = document.createElement('script');
+    script.textContent = artifact.code.js;
+    sandbox.appendChild(script);
 
-    // Cleanup function
     return () => {
-      if (sandbox) {
-        sandbox.innerHTML = '';
-      }
+      sandbox.innerHTML = '';
     };
   }, [artifact]);
 
   return (
     <div className="physics-container" ref={containerRef}>
-      <div className="physics-container-header">
-        <h3>{artifact.code.title}</h3>
-        <p>{artifact.code.description}</p>
-      </div>
+      {isOwner && (
+        <button 
+          className="delete-button" 
+          onClick={handleDelete}
+          disabled={isDeleting}
+          title="Delete this artifact"
+        >
+          ×
+        </button>
+      )}
       <div className="physics-content"></div>
       <div className="physics-meta">
         <img 
