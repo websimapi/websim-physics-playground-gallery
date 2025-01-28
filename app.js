@@ -1,4 +1,9 @@
-const { useState, useEffect, useSyncExternalStore } = React;
+const {
+  useState,
+  useEffect,
+  useSyncExternalStore,
+  useRef
+} = React;
 
 function initializePhysics(containerRef, artifact, mounted, setMountError) {
   try {
@@ -258,7 +263,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
 }
 
 function FullscreenModal({ isOpen, onClose, artifact }) {
-  const containerRef = React.useRef();
+  const containerRef = useRef();
   const [mountError, setMountError] = useState(null);
 
   useEffect(() => {
@@ -268,6 +273,7 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
     const cleanup = initializePhysics(containerRef, artifact, mounted, setMountError);
     
     return () => {
+      mounted = false;
       cleanup();
     };
   }, [isOpen, artifact]);
@@ -290,6 +296,7 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
             )}
           </div>
         </div>
+      </div>
     </div>
   );
 }
@@ -344,13 +351,12 @@ interface PhysicsArtifact {
         throw new Error('Invalid response format from AI');
       }
 
-      // Create the new iteration with explicit reference to the parent
-      const newArtifact = await room.collection('physics_artifact').create({
+      await room.collection('physics_artifact').create({
         prompt: `[Iteration] ${artifact.prompt}${suggestions ? ` with suggestions: ${suggestions}` : ''}`,
         code: artifactCode,
         title: artifactCode.title,
         description: artifactCode.description,
-        iteration_of: artifact.id, // Explicitly set the parent reference
+        iteration_of: artifact.id,
       });
 
       onClose();
@@ -425,7 +431,7 @@ function Pagination({ currentPage, totalPages, onPageChange }) {
 }
 
 function PhysicsContainer({ artifact }) {
-  const containerRef = React.useRef();
+  const containerRef = useRef();
   const room = new WebsimSocket();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -433,24 +439,18 @@ function PhysicsContainer({ artifact }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isIterateModalOpen, setIsIterateModalOpen] = useState(false);
   const [iterationCount, setIterationCount] = useState(0);
-  
+
   useEffect(() => {
     const countIterations = async () => {
       try {
-        // Get all artifacts that are iterations of this artifact or in its ancestry chain
         const allArtifacts = await room.collection('physics_artifact').getList();
         const iterationChain = new Set();
         let currentId = artifact.id;
-        
-        // Keep track of visited IDs to prevent infinite loops
         const visited = new Set();
 
-        // Build the full iteration chain from current artifact back to the original
         while (currentId && !visited.has(currentId)) {
           visited.add(currentId);
           iterationChain.add(currentId);
-          
-          // Find the current artifact in our list
           const current = allArtifacts.find(a => a.id === currentId);
           if (current && current.iteration_of) {
             currentId = current.iteration_of;
@@ -459,26 +459,21 @@ function PhysicsContainer({ artifact }) {
           }
         }
 
-        // Find all artifacts that are iterations of any artifact in our chain
         for (const chainId of iterationChain) {
           const children = allArtifacts.filter(a => a.iteration_of === chainId);
           children.forEach(child => iterationChain.add(child.id));
         }
 
-        // Convert to array and sort by creation date to get the proper sequence
         const chainArray = Array.from(iterationChain)
           .map(id => allArtifacts.find(a => a.id === id))
-          .filter(a => a) // Remove any undefined entries
+          .filter(a => a)
           .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
-        // Find the index of our current artifact in the sequence
         const position = chainArray.findIndex(a => a.id === artifact.id);
-        
-        // Add 1 since we want to display iteration numbers starting from 1
         setIterationCount(position + 1);
       } catch (error) {
         console.error('Error counting iterations:', error);
-        setIterationCount(1); // Fallback to 1 if there's an error
+        setIterationCount(1);
       }
     };
 
@@ -486,10 +481,10 @@ function PhysicsContainer({ artifact }) {
   }, [artifact, room]);
 
   const handleDelete = async (e) => {
-    e.preventDefault();  
-    e.stopPropagation(); 
+    e.preventDefault();
+    e.stopPropagation();
     
-    if (isDeleting) return; 
+    if (isDeleting) return;
     
     if (!window.confirm('Are you sure you want to delete this physics artifact?')) {
       return;
@@ -522,9 +517,10 @@ function PhysicsContainer({ artifact }) {
     const cleanup = initializePhysics(containerRef, artifact, mounted, setMountError);
     
     return () => {
+      mounted = false;
       cleanup();
     };
-  }, [artifact.id, artifact.code]);
+  }, [artifact]);
 
   const isOwner = artifact.username === room.party.client.username;
 
@@ -638,21 +634,17 @@ function PhysicsPlayground() {
   const ITEMS_PER_PAGE = 10;
   const room = new WebsimSocket();
   
-  // Get all artifacts for counting total pages
   const allArtifacts = useSyncExternalStore(
     room.collection('physics_artifact').subscribe,
     () => room.collection('physics_artifact').getList()
   );
 
-  // Calculate total pages
   const totalPages = Math.ceil(allArtifacts.length / ITEMS_PER_PAGE);
 
-  // Get paginated artifacts
   const paginatedArtifacts = allArtifacts
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
-  // Reset to first page when there's a new artifact
   useEffect(() => {
     if (allArtifacts.length > 0 && currentPage > totalPages) {
       setCurrentPage(1);
@@ -662,7 +654,6 @@ function PhysicsPlayground() {
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
-      // Scroll to top of gallery
       window.scrollTo({
         top: document.querySelector('.gallery').offsetTop,
         behavior: 'smooth'
@@ -764,10 +755,6 @@ function PhysicsPlayground() {
             description: string; // A longer description explaining the physics concept
           }
 
-          The code should leverage Three.js for 3D graphics and CANNON.js for physics where appropriate.
-          Ensure all code is properly escaped for JSON.
-          Ensure JavaScript strings are escaped with \\n\\ for newlines and properly escaped quotes.
-          
           Create a physics demonstration for: ${prompt}`,
           data: prompt
         }),
@@ -836,4 +823,9 @@ function PhysicsPlayground() {
   );
 }
 
-ReactDOM.render(<PhysicsPlayground />, document.getElementById('root'));
+function init() {
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(<PhysicsPlayground />);
+}
+
+init();

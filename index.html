@@ -8,13 +8,14 @@
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   
-  <!-- Add Babel with proper configuration -->
+  <!-- Add Babel for JSX transformation -->
   <script src="https://unpkg.com/@babel/standalone@7.22.9/babel.min.js"></script>
   
   <!-- Add Three.js and its addons -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  
   <!-- Add CANNON.js for physics -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
   
@@ -22,8 +23,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <!-- Add type="text/babel" and data-type="module" for proper JSX and module support -->
-  <script type="text/babel" data-type="module" src="app.js"></script>
+  <script type="text/babel" src="app.js"></script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 </body>
 </html>
