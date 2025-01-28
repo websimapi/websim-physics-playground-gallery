@@ -62,7 +62,7 @@ button:disabled {
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .physics-content {
@@ -141,20 +141,6 @@ button:disabled {
   max-width: 80%;
 }
 
-.physics-content .error {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(255, 0, 0, 0.1);
-  padding: 15px;
-  border-radius: 4px;
-  border: 1px solid #ff0000;
-  color: #ff0000;
-  text-align: center;
-  max-width: 80%;
-}
-
 .delete-button {
   position: absolute;
   top: 10px;
@@ -172,6 +158,8 @@ button:disabled {
   transition: opacity 0.2s;
   border: none;
   padding: 0;
+  z-index: 1000;
+  pointer-events: auto;
 }
 
 .delete-button:hover {
@@ -222,7 +210,7 @@ button:disabled {
   margin-bottom: 10px;
 }
 
-.details-section:last-child {
+详情-section:last-child {
   margin-bottom: 0;
 }
 

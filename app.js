@@ -119,6 +119,27 @@ function PhysicsContainer({ artifact }) {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [mountError, setMountError] = useState(null);
   
+  // Add explicit event handler for delete
+  const handleDelete = async (e) => {
+    e.preventDefault();  // Prevent event bubbling
+    e.stopPropagation(); // Ensure the event doesn't propagate
+    
+    if (isDeleting) return; // Prevent double clicks
+    
+    if (!window.confirm('Are you sure you want to delete this physics artifact?')) {
+      return;
+    }
+    
+    setIsDeleting(true);
+    try {
+      await room.collection('physics_artifact').delete(artifact.id);
+    } catch (error) {
+      console.error('Failed to delete artifact:', error);
+      alert('Failed to delete artifact. Please try again.');
+      setIsDeleting(false);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     let shadow = null;
@@ -276,20 +297,6 @@ function PhysicsContainer({ artifact }) {
     };
   }, [artifact.id, artifact.code]);
 
-  const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to delete this physics artifact?')) return;
-    
-    setIsDeleting(true);
-    try {
-      await room.collection('physics_artifact').delete(artifact.id);
-    } catch (error) {
-      console.error('Failed to delete artifact:', error);
-      alert('Failed to delete artifact. Please try again.');
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
   const isOwner = artifact.username === room.party.client.username;
 
   return (
@@ -297,9 +304,10 @@ function PhysicsContainer({ artifact }) {
       {isOwner && (
         <button 
           className="delete-button" 
-          onClick={() => handleDelete(artifact.id)}
+          onClick={handleDelete}
           disabled={isDeleting}
           title="Delete this artifact"
+          type="button"
         >
           ×
         </button>
