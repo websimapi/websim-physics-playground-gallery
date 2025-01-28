@@ -198,6 +198,32 @@ button:disabled {
   background: #1557b0;
 }
 
+.iterate-button {
+  position: absolute;
+  top: 10px;
+  right: 78px;
+  background: #4caf50;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+  border: none;
+  padding: 0;
+  z-index: 1000;
+  pointer-events: auto;
+}
+
+.iterate-button:hover {
+  opacity: 1;
+  background: #388e3c;
+}
+
 .details-dropdown {
   background: #f8f9fa;
   padding: 15px 20px;
@@ -345,6 +371,103 @@ button:disabled {
 .fullscreen-body .physics-content {
   height: 100%;
   padding: 0;
+}
+
+.iterate-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.iterate-modal.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.iterate-content {
+  background: white;
+  width: 90%;
+  max-width: 600px;
+  border-radius: 12px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+}
+
+.iterate-header {
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.iterate-title {
+  font-size: 1.2em;
+  font-weight: 500;
+}
+
+.iterate-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #666;
+}
+
+.iterate-close:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.iterate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.iterate-input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 16px;
+  resize: vertical;
+  min-height: 100px;
+}
+
+.iterate-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.iterate-buttons button {
+  padding: 8px 16px;
+}
+
+.iterate-buttons button.secondary {
+  background: #666;
+}
+
+.iterate-buttons button.secondary:hover {
+  background: #555;
 }
 
 @media (max-width: 768px) {

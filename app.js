@@ -173,25 +173,34 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
   );
 }
 
-function PhysicsPlayground() {
-  const [prompt, setPrompt] = useState('');
+function IterateModal({ isOpen, onClose, artifact }) {
+  const [suggestions, setSuggestions] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState(null);
   const room = new WebsimSocket();
-  
-  const artifacts = useSyncExternalStore(
-    room.collection('physics_artifact').subscribe,
-    () => room.collection('physics_artifact').getList()
-  );
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!prompt.trim()) return;
-    
     setIsSubmitting(true);
-    setError(null);
 
     try {
+      const basePrompt = `Improve and iterate on this existing physics demonstration. Make it more detailed, more interactive, or add new features while maintaining its core concept.
+
+Original demonstration:
+Title: ${artifact.code.title}
+Description: ${artifact.code.description}
+Original Prompt: ${artifact.prompt}
+${suggestions ? `User suggestions: ${suggestions}` : 'Make it better/more detailed to the best of your ability'}
+
+The response must be valid JSON matching this interface:
+
+interface PhysicsArtifact {
+  html: string;
+  css: string;
+  js: string;
+  title: string;
+  description: string;
+}`;
+
       const response = await fetch('/api/ai_completion', {
         method: 'POST',
         headers: {
@@ -199,30 +208,8 @@ function PhysicsPlayground() {
           'Accept': 'application/json',
         },
         body: JSON.stringify({
-          prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
-          The response must be valid JSON matching this interface:
-
-          interface PhysicsArtifact {
-            html: string;      // The HTML code for the demonstration
-            css: string;       // The CSS styles for the demonstration
-            js: string;        // The JavaScript code for the demonstration
-            title: string;     // A short title describing the demonstration
-            description: string; // A longer description explaining the physics concept
-          }
-
-          {
-            "html": "<div class='container'><svg width='300' height='200'>...</svg></div>",
-            "css": ".container { ... }",
-            "js": "const svg = document.querySelector('svg'); ...",
-            "title": "Simple Pendulum Simulation",
-            "description": "This demonstration shows a pendulum swinging under the influence of gravity..."
-          }
-
-          The code should be self-contained and use SVG for graphics where possible.
-          Ensure all code is properly escaped for JSON.
-          
-          Create a physics demonstration for: ${prompt}`,
-          data: prompt
+          prompt: basePrompt,
+          data: artifact.code,
         }),
       });
 
@@ -237,45 +224,55 @@ function PhysicsPlayground() {
       }
 
       await room.collection('physics_artifact').create({
-        prompt,
+        prompt: `[Iteration] ${artifact.prompt}${suggestions ? ` with suggestions: ${suggestions}` : ''}`,
         code: artifactCode,
         title: artifactCode.title,
-        description: artifactCode.description
+        description: artifactCode.description,
+        iteration_of: artifact.id,
       });
 
-      setPrompt('');
-    } catch (err) {
-      console.error('Error details:', err);
-      setError('Failed to create physics simulation. Please try again with a different prompt.');
+      onClose();
+    } catch (error) {
+      console.error('Error creating iteration:', error);
+      alert('Failed to create iteration. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="container">
-      <div className="input-section">
-        <form onSubmit={handleSubmit}>
-          <div className="input-group">
-            <input
-              type="text"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Describe a physics concept or experiment..."
+    <div className={`iterate-modal ${isOpen ? 'active' : ''}`}>
+      <div className="iterate-content">
+        <div className="iterate-header">
+          <div className="iterate-title">Iterate on "{artifact.code.title}"</div>
+          <button className="iterate-close" onClick={onClose}>&times;</button>
+        </div>
+        <form onSubmit={handleSubmit} className="iterate-form">
+          <textarea
+            className="iterate-input"
+            value={suggestions}
+            onChange={(e) => setSuggestions(e.target.value)}
+            placeholder="Optional: Add your suggestions for improvements, or leave blank to let AI enhance it automatically..."
+          />
+          <div className="iterate-buttons">
+            <button 
+              type="button" 
+              className="secondary"
+              onClick={onClose}
               disabled={isSubmitting}
-            />
-            <button type="submit" disabled={isSubmitting || !prompt.trim()}>
-              {isSubmitting ? 'Creating...' : 'Create'}
+            >
+              Cancel
+            </button>
+            <button 
+              type="submit"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Creating...' : 'Create Iteration'}
             </button>
           </div>
         </form>
-        {error && <div className="error">{error}</div>}
-      </div>
-
-      <div className="gallery">
-        {artifacts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(artifact => (
-          <PhysicsContainer key={artifact.id} artifact={artifact} />
-        ))}
       </div>
     </div>
   );
@@ -288,6 +285,7 @@ function PhysicsContainer({ artifact }) {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [mountError, setMountError] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isIterateModalOpen, setIsIterateModalOpen] = useState(false);
   
   const handleDelete = async (e) => {
     e.preventDefault();  
@@ -313,6 +311,12 @@ function PhysicsContainer({ artifact }) {
     e.preventDefault();
     e.stopPropagation();
     setIsFullscreen(true);
+  };
+
+  const handleIterate = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsIterateModalOpen(true);
   };
 
   useEffect(() => {
@@ -479,6 +483,14 @@ function PhysicsContainer({ artifact }) {
           </button>
         )}
         <button 
+          className="iterate-button" 
+          onClick={handleIterate}
+          title="Iterate and improve"
+          type="button"
+        >
+          ↻
+        </button>
+        <button 
           className="fullscreen-button" 
           onClick={handleFullscreen}
           title="View fullscreen"
@@ -546,7 +558,120 @@ function PhysicsContainer({ artifact }) {
         onClose={() => setIsFullscreen(false)}
         artifact={artifact}
       />
+      <IterateModal
+        isOpen={isIterateModalOpen}
+        onClose={() => setIsIterateModalOpen(false)}
+        artifact={artifact}
+      />
     </>
+  );
+}
+
+function PhysicsPlayground() {
+  const [prompt, setPrompt] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  const room = new WebsimSocket();
+  
+  const artifacts = useSyncExternalStore(
+    room.collection('physics_artifact').subscribe,
+    () => room.collection('physics_artifact').getList()
+  );
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!prompt.trim()) return;
+    
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/ai_completion', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: `Create an interactive physics demonstration or simulation based on the following prompt. 
+          The response must be valid JSON matching this interface:
+
+          interface PhysicsArtifact {
+            html: string;      // The HTML code for the demonstration
+            css: string;       // The CSS styles for the demonstration
+            js: string;        // The JavaScript code for the demonstration
+            title: string;     // A short title describing the demonstration
+            description: string; // A longer description explaining the physics concept
+          }
+
+          {
+            "html": "<div class='container'><svg width='300' height='200'>...</svg></div>",
+            "css": ".container { ... }",
+            "js": "const svg = document.querySelector('svg'); ...",
+            "title": "Simple Pendulum Simulation",
+            "description": "This demonstration shows a pendulum swinging under the influence of gravity..."
+          }
+
+          The code should be self-contained and use SVG for graphics where possible.
+          Ensure all code is properly escaped for JSON.
+          
+          Create a physics demonstration for: ${prompt}`,
+          data: prompt
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const artifactCode = await response.json();
+      
+      if (!artifactCode.html || !artifactCode.css || !artifactCode.js || !artifactCode.title || !artifactCode.description) {
+        throw new Error('Invalid response format from AI');
+      }
+
+      await room.collection('physics_artifact').create({
+        prompt,
+        code: artifactCode,
+        title: artifactCode.title,
+        description: artifactCode.description
+      });
+
+      setPrompt('');
+    } catch (err) {
+      console.error('Error details:', err);
+      setError('Failed to create physics simulation. Please try again with a different prompt.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="container">
+      <div className="input-section">
+        <form onSubmit={handleSubmit}>
+          <div className="input-group">
+            <input
+              type="text"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Describe a physics concept or experiment..."
+              disabled={isSubmitting}
+            />
+            <button type="submit" disabled={isSubmitting || !prompt.trim()}>
+              {isSubmitting ? 'Creating...' : 'Create'}
+            </button>
+          </div>
+        </form>
+        {error && <div className="error">{error}</div>}
+      </div>
+
+      <div className="gallery">
+        {artifacts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(artifact => (
+          <PhysicsContainer key={artifact.id} artifact={artifact} />
+        ))}
+      </div>
+    </div>
   );
 }
 
