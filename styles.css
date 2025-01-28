@@ -72,16 +72,22 @@ button:disabled {
 .physics-content {
   position: relative;
   isolation: isolate;
-  padding: 0;
+  padding: 20px;
   border-bottom: 1px solid #eee;
   height: 300px;
   contain: content;
   box-sizing: border-box;
   overflow: hidden;
-  background: #f8f9fa;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.physics-content canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+  margin: auto;
 }
 
 .physics-content::before {
@@ -334,8 +340,6 @@ button:disabled {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.3s ease;
-  padding: 20px;
-  box-sizing: border-box;
 }
 
 .fullscreen-modal.active {
@@ -345,13 +349,12 @@ button:disabled {
 
 .fullscreen-content {
   background: white;
-  width: 100%;
-  height: 100%;
+  width: 90vw;
+  height: 90vh;
   border-radius: 12px;
   position: relative;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .fullscreen-header {
@@ -360,7 +363,6 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-shrink: 0;
 }
 
 .fullscreen-title {
@@ -391,25 +393,15 @@ button:disabled {
   flex: 1;
   position: relative;
   overflow: hidden;
-  min-height: 0;
-}
-
-.fullscreen-body .physics-content {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  width: 100%;
   height: 100%;
-  padding: 0;
-  background: #f8f9fa;
-  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.fullscreen-body .physics-content > * {
+.fullscreen-body .physics-content {
+  padding: 0;
   width: 100%;
   height: 100%;
 }
@@ -418,28 +410,6 @@ button:disabled {
   width: 100% !important;
   height: 100% !important;
   display: block;
-}
-
-.fullscreen-body .scene-container {
-  width: 100%;
-  height: 100%;
-  position: relative;
-}
-
-.fullscreen-body .physics-content :host {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.fullscreen-body .physics-content :host > div {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .iterate-modal {
@@ -537,24 +507,6 @@ button:disabled {
 
 .iterate-buttons button.secondary:hover {
   background: #555;
-}
-
-.scene-container {
-  width: 100%;
-  height: 100%;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f8f9fa;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.scene-container canvas {
-  width: 100% !important;
-  height: 100% !important;
-  outline: none;
 }
 
 @media (max-width: 768px) {

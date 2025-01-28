@@ -11,7 +11,6 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
     let shadow = null;
     let cleanup = () => {};
     let sceneCleanup = null;
-    let resizeObserver = null;
 
     const initializePhysics = () => {
       try {
@@ -86,65 +85,79 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
           THREE: window.THREE,
           initThreeScene: () => {
             const scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xf8f9fa);
-            
-            const container = wrapper;
-            const width = container.clientWidth;
-            const height = container.clientHeight;
-            const aspectRatio = width / height;
-            
-            const camera = new THREE.PerspectiveCamera(60, aspectRatio, 0.1, 1000);
-            camera.position.set(4, 4, 4);
-            camera.lookAt(0, 0, 0);
+            const camera = new THREE.PerspectiveCamera(
+              75,
+              wrapper.clientWidth / wrapper.clientHeight,
+              0.1,
+              1000
+            );
             
             const renderer = new THREE.WebGLRenderer({ 
               antialias: true,
-              alpha: true,
+              alpha: true // Enable transparency
             });
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            renderer.setSize(width, height, false);
-            container.appendChild(renderer.domElement);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(wrapper.clientWidth, wrapper.clientHeight, false);
+            
+            // Center and style the canvas
+            renderer.domElement.style.display = 'block';
+            renderer.domElement.style.margin = 'auto';
+            renderer.domElement.style.width = '100%';
+            renderer.domElement.style.height = '100%';
+            
+            wrapper.appendChild(renderer.domElement);
             
             const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // Add smooth damping
+            controls.dampingFactor = 0.05;
             
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            
+            // Add directional light
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+            
+            // Handle resize
             const handleResize = () => {
-              if (!mounted) return;
-              
-              const newWidth = container.clientWidth;
-              const newHeight = container.clientHeight;
-              
-              camera.aspect = newWidth / newHeight;
+              const width = wrapper.clientWidth;
+              const height = wrapper.clientHeight;
+              camera.aspect = width / height;
               camera.updateProjectionMatrix();
-              
-              renderer.setSize(newWidth, newHeight, false);
+              renderer.setSize(width, height, false);
             };
-
-            if (resizeObserver) resizeObserver.disconnect();
-            resizeObserver = new ResizeObserver((entries) => {
-              if (!mounted) return;
-              handleResize();
-            });
-            resizeObserver.observe(container);
             
-            // Handle fullscreen resize
             window.addEventListener('resize', handleResize);
             
-            // Store cleanup for Three.js scene
-            sceneCleanup = () => {
-              window.removeEventListener('resize', handleResize);
-              controls.dispose();
-              renderer.dispose();
-              if (renderer.domElement && renderer.domElement.parentNode) {
-                renderer.domElement.parentNode.removeChild(renderer.domElement);
-              }
-            };
+            // Set initial camera position
+            camera.position.z = 5;
+            camera.position.y = 2;
+            camera.position.x = 2;
+            camera.lookAt(0, 0, 0);
+            
+            // Update controls in animation loop
+            function animate() {
+              requestAnimationFrame(animate);
+              controls.update();
+              renderer.render(scene, camera);
+            }
+            animate();
             
             return {
               scene,
               camera,
               renderer,
               controls,
-              dispose: sceneCleanup
+              dispose: () => {
+                window.removeEventListener('resize', handleResize);
+                controls.dispose();
+                renderer.dispose();
+                if (renderer.domElement && renderer.domElement.parentNode) {
+                  renderer.domElement.parentNode.removeChild(renderer.domElement);
+                }
+              }
             };
           },
           loaders: {
@@ -231,9 +244,22 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
 
     const initTimer = setTimeout(initializePhysics, 100);
 
+    // Add resize observer to handle container size changes
+    const resizeObserver = new ResizeObserver(() => {
+      if (mounted) {
+        cleanup();
+        initializePhysics();
+      }
+    });
+    
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current.querySelector('.physics-content'));
+    }
+
     return () => {
       cleanup();
       clearTimeout(initTimer);
+      resizeObserver.disconnect();
     };
   }, [isOpen, artifact]);
 
@@ -241,18 +267,18 @@ function FullscreenModal({ isOpen, onClose, artifact }) {
 
   return (
     <div className={`fullscreen-modal ${isOpen ? 'active' : ''}`}>
-      <div className="fullscreen-content">
+      <div className="fullscreen-content" ref={containerRef}>
         <div className="fullscreen-header">
           <div className="fullscreen-title">{artifact.code.title}</div>
           <button className="fullscreen-close" onClick={onClose}>&times;</button>
         </div>
         <div className="fullscreen-body">
           <div className="physics-content">
-            {mountError ? (
+            {mountError && (
               <div className="error">
                 Failed to load physics simulation: {mountError}
               </div>
-            ) : null}
+            )}
           </div>
         </div>
       </div>
@@ -355,7 +381,7 @@ interface PhysicsArtifact {
             </button>
             <button 
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !suggestions.trim()}
             >
               {isSubmitting ? 'Creating...' : 'Create Iteration'}
             </button>
@@ -463,9 +489,6 @@ function PhysicsContainer({ artifact }) {
     let mounted = true;
     let shadow = null;
     let cleanup = () => {};
-    let sceneCleanup = null;
-    let resizeObserver = null;
-    let resizeTimeoutId = null;
 
     const initializePhysics = () => {
       try {
@@ -476,7 +499,6 @@ function PhysicsContainer({ artifact }) {
           throw new Error('Could not find physics content container');
         }
 
-        // Clear existing shadow root content if it exists
         if (sandbox.shadowRoot) {
           sandbox.shadowRoot.innerHTML = '';
         } else {
@@ -484,41 +506,20 @@ function PhysicsContainer({ artifact }) {
         }
 
         const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;';
+        wrapper.style.cssText = 'width: 100%; height: 100%; position: relative;';
         shadow.appendChild(wrapper);
 
         const styleElement = document.createElement('style');
         styleElement.textContent = `
           :host {
             all: initial;
-            display: flex;
+            display: block;
             position: relative;
             width: 100%;
             height: 100%;
-            align-items: center;
-            justify-content: center;
             contain: content;
-            background: #f8f9fa;
-            border-radius: 8px;
-            overflow: hidden;
           }
           ${artifact.code.css || ''}
-          
-          /* Ensure Three.js canvas fits properly */
-          canvas {
-            width: 100% !important;
-            height: 100% !important;
-            outline: none;
-          }
-          
-          /* For 2D content */
-          div {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
         `;
         shadow.appendChild(styleElement);
 
@@ -545,134 +546,79 @@ function PhysicsContainer({ artifact }) {
           THREE: window.THREE,
           initThreeScene: () => {
             const scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xf8f9fa);
-            
-            const container = wrapper;
-            const width = container.clientWidth || 300;
-            const height = container.clientHeight || 300;
-            const aspectRatio = width / height;
-            
-            const camera = new THREE.PerspectiveCamera(60, aspectRatio, 0.1, 1000);
-            camera.position.set(4, 4, 4);
-            camera.lookAt(0, 0, 0);
+            const camera = new THREE.PerspectiveCamera(
+              75,
+              wrapper.clientWidth / wrapper.clientHeight,
+              0.1,
+              1000
+            );
             
             const renderer = new THREE.WebGLRenderer({ 
               antialias: true,
-              alpha: true,
-              preserveDrawingBuffer: true
+              alpha: true // Enable transparency
             });
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio
-            renderer.setSize(width, height, false);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(wrapper.clientWidth, wrapper.clientHeight, false);
             
-            // Only append if not already present
-            if (!container.contains(renderer.domElement)) {
-              container.appendChild(renderer.domElement);
-            }
+            // Center and style the canvas
+            renderer.domElement.style.display = 'block';
+            renderer.domElement.style.margin = 'auto';
+            renderer.domElement.style.width = '100%';
+            renderer.domElement.style.height = '100%';
             
-            // Improved resize handling
-            const handleResize = () => {
-              if (!mounted) return;
-              
-              const newWidth = container.clientWidth || 300;
-              const newHeight = container.clientHeight || 300;
-              
-              camera.aspect = newWidth / newHeight;
-              camera.updateProjectionMatrix();
-              
-              renderer.setSize(newWidth, newHeight, false);
-            };
-
-            // Debounced resize observer
-            const debouncedResize = () => {
-              if (resizeTimeoutId) clearTimeout(resizeTimeoutId);
-              resizeTimeoutId = setTimeout(handleResize, 100);
-            };
-
-            if (resizeObserver) resizeObserver.disconnect();
-            resizeObserver = new ResizeObserver((entries) => {
-              if (!mounted) return;
-              const entry = entries[0];
-              if (entry && entry.contentRect) {
-                debouncedResize();
-              }
-            });
+            wrapper.appendChild(renderer.domElement);
             
-            resizeObserver.observe(container);
-
-            // Add better lighting setup
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // Add smooth damping
+            controls.dampingFactor = 0.05;
+            
+            // Add ambient light
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
             scene.add(ambientLight);
             
-            const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            mainLight.position.set(5, 5, 5);
-            mainLight.castShadow = true;
-            mainLight.shadow.mapSize.width = 1024;
-            mainLight.shadow.mapSize.height = 1024;
-            scene.add(mainLight);
+            // Add directional light
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
             
-            const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
-            fillLight.position.set(-5, 0, -5);
-            scene.add(fillLight);
+            // Handle resize
+            const handleResize = () => {
+              const width = wrapper.clientWidth;
+              const height = wrapper.clientHeight;
+              camera.aspect = width / height;
+              camera.updateProjectionMatrix();
+              renderer.setSize(width, height, false);
+            };
             
-            const controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.screenSpacePanning = true;
-            controls.enableZoom = true;
-            controls.autoRotate = true; // Auto-rotate for preview
-            controls.autoRotateSpeed = 1;
+            window.addEventListener('resize', handleResize);
             
-            // Add a subtle grid for better spatial reference
-            const gridHelper = new THREE.GridHelper(10, 10, 0xcccccc, 0xeeeeee);
-            gridHelper.material.opacity = 0.2;
-            gridHelper.material.transparent = true;
-            scene.add(gridHelper);
+            // Set initial camera position
+            camera.position.z = 5;
+            camera.position.y = 2;
+            camera.position.x = 2;
+            camera.lookAt(0, 0, 0);
             
-            let isAnimating = true;
-            let animationFrameId = null;
-            
+            // Update controls in animation loop
             function animate() {
-              if (!mounted || !isAnimating) return;
-              animationFrameId = requestAnimationFrame(animate);
+              requestAnimationFrame(animate);
               controls.update();
               renderer.render(scene, camera);
             }
             animate();
-            
-            sceneCleanup = () => {
-              isAnimating = false;
-              if (animationFrameId) {
-                cancelAnimationFrame(animationFrameId);
-              }
-              if (resizeTimeoutId) {
-                clearTimeout(resizeTimeoutId);
-              }
-              if (resizeObserver) {
-                resizeObserver.disconnect();
-              }
-              controls.dispose();
-              renderer.dispose();
-              if (renderer.domElement && renderer.domElement.parentNode) {
-                renderer.domElement.parentNode.removeChild(renderer.domElement);
-              }
-              scene.traverse((object) => {
-                if (object.geometry) object.geometry.dispose();
-                if (object.material) {
-                  if (Array.isArray(object.material)) {
-                    object.material.forEach(material => material.dispose());
-                  } else {
-                    object.material.dispose();
-                  }
-                }
-              });
-            };
             
             return {
               scene,
               camera,
               renderer,
               controls,
-              dispose: sceneCleanup
+              dispose: () => {
+                window.removeEventListener('resize', handleResize);
+                controls.dispose();
+                renderer.dispose();
+                if (renderer.domElement && renderer.domElement.parentNode) {
+                  renderer.domElement.parentNode.removeChild(renderer.domElement);
+                }
+              }
             };
           },
           loaders: {
@@ -727,30 +673,15 @@ function PhysicsContainer({ artifact }) {
 
         cleanup = () => {
           mounted = false;
-          
-          if (resizeTimeoutId) {
-            clearTimeout(resizeTimeoutId);
-          }
-          
-          if (resizeObserver) {
-            resizeObserver.disconnect();
-          }
-          
           animations.forEach(id => window.cancelAnimationFrame(id));
           timers.forEach(id => window.clearTimeout(id));
           intervals.forEach(id => window.clearInterval(id));
-          
-          if (sceneCleanup) {
-            sceneCleanup();
-          }
-          
-          if (shadow) {
-            shadow.innerHTML = '';
-          }
-          
           animations.clear();
           timers.clear();
           intervals.clear();
+          if (shadow) {
+            shadow.innerHTML = '';
+          }
         };
 
         const code = `
@@ -758,7 +689,7 @@ function PhysicsContainer({ artifact }) {
             try {
               ${artifact.code.js || ''}
             } catch (error) {
-              console.error('[Physics ${artifact.id}] Runtime error:', error);
+              console.error('[Physics ${artifact.id}]:', error);
             }
           }
         `;
@@ -766,7 +697,7 @@ function PhysicsContainer({ artifact }) {
         (new Function('sandbox', code))(sandboxEnvironment);
 
       } catch (error) {
-        console.error(`[Physics ${artifact.id}] Initialization error:`, error);
+        console.error(`[Physics ${artifact.id}]:`, error);
         setMountError(error.message);
       }
     };
@@ -774,11 +705,8 @@ function PhysicsContainer({ artifact }) {
     const initTimer = setTimeout(initializePhysics, 100);
 
     return () => {
-      mounted = false;
-      if (initTimer) {
-        clearTimeout(initTimer);
-      }
       cleanup();
+      clearTimeout(initTimer);
     };
   }, [artifact.id, artifact.code]);
 
@@ -1013,5 +941,4 @@ function PhysicsPlayground() {
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<PhysicsPlayground />);
+ReactDOM.render(<PhysicsPlayground />, document.getElementById('root'));
