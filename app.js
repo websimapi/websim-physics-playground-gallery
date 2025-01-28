@@ -8,6 +8,11 @@ const {
 function initializePhysics(containerRef, artifact, mounted, setMountError) {
   const logPrefix = `[Physics ${artifact.id}]`;
   console.log(`${logPrefix} Initializing physics for artifact: ${artifact.code.title}`);
+  console.log(`${logPrefix} Code content:`, {
+    html: artifact.code.html,
+    css: artifact.code.css,
+    js: artifact.code.js
+  });
 
   try {
     if (!containerRef.current) {
@@ -80,9 +85,9 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       throw e;
     }
 
-    const eventListeners = new Set();
     console.log(`${logPrefix} Setting up sandbox environment`);
     
+    const eventListeners = new Set();
     const sandboxWindow = {
       innerWidth: wrapper.clientWidth,
       innerHeight: wrapper.clientHeight,
@@ -126,7 +131,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       },
       Math: Object.create(Math),
       THREE: window.THREE,
-      CANNON: window.CANNON, // Explicitly expose CANNON
+      CANNON: window.CANNON,
       initThreeScene: () => {
         console.log(`${logPrefix} Initializing Three.js scene`);
         try {
@@ -289,6 +294,11 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
 
     console.log(`${logPrefix} Executing physics code`);
     try {
+      // Add explicit error checking for invalid characters in the code
+      if (/[\u2018\u2019\u201C\u201D]/.test(artifact.code.js)) {
+        throw new Error('Code contains invalid smart quotes. Please use regular quotes.');
+      }
+      
       const code = `
         with (sandbox) {
           try {
@@ -302,6 +312,7 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
       (new Function('sandbox', code))(sandboxEnvironment);
     } catch (e) {
       console.error(`${logPrefix} Error executing physics code:`, e);
+      console.error(`${logPrefix} Code that caused error:`, artifact.code.js);
       throw e;
     }
 
