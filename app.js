@@ -1,3 +1,73 @@
+const codeUtils = {
+  // Format code using Prettier
+  formatCode(code, parser = 'babel') {
+    try {
+      return prettier.format(code, {
+        parser,
+        plugins: prettierPlugins,
+        semi: true,
+        singleQuote: true,
+        printWidth: 80,
+        tabWidth: 2,
+      });
+    } catch (error) {
+      console.error('Prettier formatting failed:', error);
+      return code;
+    }
+  },
+
+  // Clean and normalize JavaScript code
+  cleanJavaScript(code) {
+    try {
+      // Remove template literals and convert to concatenation
+      let cleaned = code
+        .replace(/`/g, "'")
+        .replace(/\$\{([^}]+)\}/g, "' + ($1) + '")
+        .trim();
+
+      // Attempt to format with Prettier
+      cleaned = this.formatCode(cleaned);
+
+      // Verify the code is valid JavaScript
+      new Function('sandbox', `with (sandbox) { ${cleaned} }`);
+
+      return cleaned;
+    } catch (error) {
+      throw new Error(`Code cleaning failed: ${error.message}`);
+    }
+  },
+
+  // Verify and format the entire artifact code
+  validateArtifactCode(artifactCode) {
+    try {
+      const { html, css, js, title, description } = artifactCode;
+
+      if (!html || !css || !js || !title || !description) {
+        throw new Error('Missing required fields in artifact code');
+      }
+
+      // Format HTML
+      const formattedHtml = this.formatCode(html, 'html');
+
+      // Format CSS
+      const formattedCss = this.formatCode(css, 'css');
+
+      // Clean and format JavaScript
+      const formattedJs = this.cleanJavaScript(js);
+
+      return {
+        html: formattedHtml,
+        css: formattedCss,
+        js: formattedJs,
+        title,
+        description,
+      };
+    } catch (error) {
+      throw new Error(`Artifact validation failed: ${error.message}`);
+    }
+  }
+};
+
 const {
   useState,
   useEffect,
@@ -291,29 +361,22 @@ function initializePhysics(containerRef, artifact, mounted, setMountError) {
 
     console.log(`${logPrefix} Executing physics code`);
     try {
-      // Clean up any remaining template literals
-      const cleanedJs = artifact.code.js.replace(/`/g, "'").replace(/\${/g, "' + ").replace(/}/g, " + '");
+      // Clean and format the code before execution
+      const cleanedCode = codeUtils.cleanJavaScript(artifact.code.js);
+      console.log(`${logPrefix} Formatted code:`, cleanedCode);
       
-      // First verify the code can be parsed
-      try {
-        new Function('sandbox', `with (sandbox) { ${cleanedJs} }`);
-      } catch (syntaxError) {
-        console.error(`${logPrefix} Syntax error in physics code:`, syntaxError);
-        throw new Error(`Code syntax error: ${syntaxError.message}`);
-      }
-
-      const code = `
+      const wrappedCode = `
         with (sandbox) {
           try {
-            ${cleanedJs || ''}
+            ${cleanedCode}
           } catch (error) {
             console.error('${logPrefix} Runtime error:', error);
             throw error;
           }
         }
       `;
-      
-      (new Function('sandbox', code))(sandboxEnvironment);
+
+      new Function('sandbox', wrappedCode)(sandboxEnvironment);
     } catch (e) {
       console.error(`${logPrefix} Error executing physics code:`, e);
       throw e;
@@ -784,21 +847,12 @@ function PhysicsPlayground() {
           }
 
           Important:
-          1. All JavaScript code must be properly escaped for JSON - NO TEMPLATE LITERALS OR BACKTICKS
-          2. Ensure HTML includes necessary containers
-          3. Make sure all variables are properly declared
-          4. All Three.js/CANNON.js operations must happen after scene initialization
+          1. Write clean, standard JavaScript - no template literals
+          2. Use only single quotes for strings
+          3. Ensure proper variable declarations
+          4. Initialize Three.js/CANNON.js after scene setup
           5. Use window.requestAnimationFrame for animation loops
-          6. Use single or double quotes, NOT backticks in the JavaScript code
-
-          Example structure:
-          {
-            "html": "<div class='scene-container'></div>",
-            "css": ".scene-container { width: 100%; height: 100%; }",
-            "js": "const { scene, camera, renderer, controls } = initThreeScene();\\nconst geometry = new THREE.BoxGeometry();\\nconst material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });\\nconst cube = new THREE.Mesh(geometry, material);\\nscene.add(cube);\\n\\nfunction animate() {\\n  requestAnimationFrame(animate);\\n  cube.rotation.x += 0.01;\\n  cube.rotation.y += 0.01;\\n  renderer.render(scene, camera);\\n}\\nanimate();",
-            "title": "Rotating 3D Cube",
-            "description": "A simple demonstration of 3D graphics using Three.js"
-          }
+          6. Properly escape all strings and quotes
 
           Create a physics demonstration for: ${prompt}`,
           data: prompt
@@ -809,24 +863,12 @@ function PhysicsPlayground() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const artifactCode = await response.json();
+      let artifactCode = await response.json();
       console.log('Received artifact code:', artifactCode);
       
-      // Validate the response format
-      if (!artifactCode.html || !artifactCode.css || !artifactCode.js || !artifactCode.title || !artifactCode.description) {
-        throw new Error('Invalid response format from AI - missing required fields');
-      }
-
-      // Clean up any template literals in the JavaScript code
-      artifactCode.js = artifactCode.js.replace(/`/g, "'").replace(/\${/g, "' + ").replace(/}/g, " + '");
-
-      // Validate JavaScript syntax before creating artifact
-      try {
-        new Function('sandbox', `with (sandbox) { ${artifactCode.js} }`);
-      } catch (syntaxError) {
-        console.error('JavaScript syntax error:', syntaxError);
-        throw new Error(`Invalid JavaScript code generated: ${syntaxError.message}`);
-      }
+      // Format and validate the code
+      artifactCode = codeUtils.validateArtifactCode(artifactCode);
+      console.log('Formatted and validated code:', artifactCode);
 
       // Create the artifact
       const newArtifact = await room.collection('physics_artifact').create({
